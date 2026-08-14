@@ -1,0 +1,235 @@
+"""
+Tests that don't require network access (no live yfinance calls) — they
+exercise the engine's own logic with synthetic price data. Run with:
+    pytest
+from the repo root, after `pip install -e ".[dev]"` or
+`pip install -r requirements.txt`.
+"""
+
+import datetime as dt
+
+import pytest
+
+from moneymaker.accounts import AccountManager, CredentialStore
+from moneymaker.config import get_home
+from moneymaker.engine import Simulator
+from moneymaker.logger import TradeLogger
+from moneymaker.providers import PROVIDERS, make_provider
+from moneymaker.providers.ibkr import IBKRPaperProvider
+from moneymaker.providers.oanda import OANDAPracticeProvider
+from moneymaker.providers.simulated import SimulatedExecutionProvider
+from moneymaker.providers.trading212 import Trading212DemoProvider
+from moneymaker.risk import RiskManager
+from moneymaker.strategy import Bar, RetailSalesSpikeStrategy, load_strategies
+
+
+@pytest.fixture
+def home(tmp_path):
+    return get_home(str(tmp_path / ".moneymaker"))
+
+
+# --------------------------------------------------------------------------
+# Risk manager
+# --------------------------------------------------------------------------
+
+def test_position_sizing():
+    risk = RiskManager(risk_pct=0.01)
+    size = risk.position_size(account_balance=10000, entry_price=100, stop_price=99)
+    # risking 1% of 10000 = 100, stop distance = 1 -> size = 100
+    assert size == pytest.approx(100.0)
+
+
+def test_position_sizing_zero_stop_distance():
+    risk = RiskManager(risk_pct=0.01)
+    assert risk.position_size(10000, 100, 100) == 0.0
+
+
+# --------------------------------------------------------------------------
+# Credential store
+# --------------------------------------------------------------------------
+
+def test_credential_store_env_ref(home, monkeypatch):
+    monkeypatch.setenv("TEST_SECRET", "shh")
+    store = CredentialStore(home)
+    store.set_ref("some_provider", "api_key", "TEST_SECRET")
+    assert store.get("some_provider", "api_key") == "shh"
+    masked = store.list_masked()
+    assert masked["some_provider"]["api_key"] == "env:TEST_SECRET"  # never exposes the value
+
+
+def test_credential_store_direct_value(home):
+    store = CredentialStore(home)
+    store.set_value("some_provider", "api_key", "raw-secret")
+    assert store.get("some_provider", "api_key") == "raw-secret"
+    masked = store.list_masked()
+    assert "raw-secret" not in str(masked)  # never exposes the value, even for direct storage
+
+
+def test_credential_store_clear(home):
+    store = CredentialStore(home)
+    store.set_value("p", "k", "v")
+    store.clear("p", "k")
+    assert store.get("p", "k") is None
+
+
+# --------------------------------------------------------------------------
+# Account manager / multi-account support
+# --------------------------------------------------------------------------
+
+def test_account_manager_multi_account(home):
+    mgr = AccountManager(home)
+    a1 = mgr.create("paper-1", "simulated", starting_balance=10000)
+    a2 = mgr.create("paper-2", "simulated", starting_balance=25000)
+    accts = mgr.list(provider="simulated")
+    assert {a.account_id for a in accts} == {a1.account_id, a2.account_id}
+    assert mgr.get(a1.account_id).balance == 10000
+    assert mgr.get(a2.account_id).balance == 25000
+
+    mgr.update_balance(a1.account_id, 10500)
+    assert mgr.get(a1.account_id).balance == 10500
+
+    mgr.delete(a2.account_id)
+    assert mgr.get(a2.account_id) is None
+
+
+# --------------------------------------------------------------------------
+# Provider parity: simulated provider has the full account-aware surface
+# --------------------------------------------------------------------------
+
+def test_simulated_provider_full_parity(home):
+    provider = make_provider("simulated", home)
+    provider.authenticate()  # no-op, should not raise
+
+    acct = provider.create_account("test-account", starting_balance=5000)
+    assert acct.balance == 5000
+    assert provider.get_account_balance(acct.account_id) == 5000
+
+    fetched = provider.get_account(acct.account_id)
+    assert fetched.account_id == acct.account_id
+
+    accts = provider.list_accounts()
+    assert acct.account_id in [a.account_id for a in accts]
+
+    result = provider.execute_order(
+        account_id=acct.account_id, ticker="TEST", direction="long", size=1,
+        reference_price=100.0, timestamp=dt.datetime.now(), closing=False,
+    )
+    assert result.fill_price > 100.0  # slippage works against you on entry
+
+    provider.on_trade_closed(acct.account_id, pnl=42.0)
+    assert provider.get_account_balance(acct.account_id) == pytest.approx(5042.0)
+
+
+def test_make_provider_refuses_unknown_name(home):
+    with pytest.raises(ValueError):
+        make_provider("not_a_real_provider", home)
+
+
+def test_stub_providers_raise_not_implemented(home):
+    for cls in (Trading212DemoProvider, IBKRPaperProvider, OANDAPracticeProvider):
+        provider = cls(home)
+        with pytest.raises(NotImplementedError):
+            provider.execute_order(
+                account_id="x", ticker="X", direction="long", size=1,
+                reference_price=100.0, timestamp=dt.datetime.now(), closing=False,
+            )
+
+
+def test_stub_provider_credential_check_before_stub_error(home):
+    # Without credentials registered, authenticate() should fail on the
+    # *missing credentials* message, not silently fall through.
+    provider = Trading212DemoProvider(home)
+    with pytest.raises(RuntimeError, match="Missing credentials"):
+        provider.authenticate()
+
+
+def test_no_provider_is_auto_constructible_if_marked_live(home):
+    # None of the shipped providers are live yet, but the safety rail
+    # itself must hold: is_live=True providers are never auto-constructed.
+    for name, cls in PROVIDERS.items():
+        assert cls.is_live is False, f"{name} is marked live but still in the default registry"
+
+
+# --------------------------------------------------------------------------
+# Full simulator lifecycle with synthetic bars (no network needed)
+# --------------------------------------------------------------------------
+
+def test_simulator_full_trade_lifecycle(home):
+    strategy = RetailSalesSpikeStrategy()
+    provider = make_provider("simulated", home)
+    account = provider.create_account("test", starting_balance=10000)
+    risk = RiskManager(risk_pct=0.01)
+    logger = TradeLogger(home, "test_session")
+    sim = Simulator(strategy, provider, account.account_id, risk, logger, ticker="TEST")
+
+    base_time = dt.datetime(2026, 8, 14, 8, 20)
+    prices = [
+        5000, 5001, 5000, 5000, 5001,   # baseline window
+        5030, 5045, 5020, 5015, 5013,    # spike window
+        5014, 5013, 5013, 5012, 5030,     # still building
+        5045, 5045,                        # two stable post-spike bars -> long entry
+        5090,                                # should hit target
+    ]
+    for i, p in enumerate(prices):
+        sim.feed_bar(Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)))
+
+    logger.write_csv()
+    summary = logger.summary()
+    assert summary["trades"] == 1
+    assert summary["wins"] == 1
+    assert summary["total_pnl"] > 0
+
+    # Account balance should reflect the realized P&L via on_trade_closed
+    assert provider.get_account_balance(account.account_id) == pytest.approx(
+        10000 + summary["total_pnl"]
+    )
+
+
+def test_simulator_stop_loss_path(home):
+    strategy = RetailSalesSpikeStrategy()
+    provider = make_provider("simulated", home)
+    account = provider.create_account("test", starting_balance=10000)
+    risk = RiskManager(risk_pct=0.01)
+    logger = TradeLogger(home, "test_session_stop")
+    sim = Simulator(strategy, provider, account.account_id, risk, logger, ticker="TEST")
+
+    base_time = dt.datetime(2026, 8, 14, 8, 20)
+    # Same setup as the winning-trade test (long entry around 5045),
+    # but this time price drops straight through the stop instead of
+    # continuing toward the target.
+    prices = [
+        5000, 5001, 5000, 5000, 5001,   # baseline window
+        5030, 5045, 5020, 5015, 5013,    # spike window
+        5014, 5013, 5013, 5012, 5030,     # still building
+        5045, 5045,                        # two stable post-spike bars -> long entry
+        5000,                                # drops through stop -> exit
+    ]
+    for i, p in enumerate(prices):
+        sim.feed_bar(Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)))
+
+    logger.write_csv()
+    summary = logger.summary()
+    assert summary["trades"] == 1
+    assert summary["losses"] == 1
+    assert summary["total_pnl"] < 0
+    assert logger.trades[0].exit_reason == "stop"
+
+
+# --------------------------------------------------------------------------
+# Strategy loading from filesystem
+# --------------------------------------------------------------------------
+
+def test_drop_in_strategy_loading(home, tmp_path):
+    strat_dir_file = f"{home}/strategies/custom_test_strategy.py"
+    with open(strat_dir_file, "w") as f:
+        f.write(
+            "from moneymaker.strategy import Strategy, StrategyContext, Bar\n"
+            "class CustomTest(Strategy):\n"
+            "    \"\"\"A custom test strategy.\"\"\"\n"
+            "    name = 'custom_test'\n"
+            "    def on_bar(self, ctx, bar):\n"
+            "        pass\n"
+        )
+    strategies = load_strategies(home)
+    assert "custom_test" in strategies
+    assert "retail_sales_spike" in strategies  # built-ins still present

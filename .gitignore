@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Local data dir if it ever ends up inside the repo checkout
+.moneymaker/
+
+# Never commit real credentials
+credentials.json
+*.env
+.env
