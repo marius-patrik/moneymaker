@@ -233,3 +233,67 @@ def test_drop_in_strategy_loading(home, tmp_path):
     strategies = load_strategies(home)
     assert "custom_test" in strategies
     assert "retail_sales_spike" in strategies  # built-ins still present
+
+
+# --------------------------------------------------------------------------
+# Filtered strategy: minimum-surprise gate (real spike day vs. flat day)
+# --------------------------------------------------------------------------
+
+def _load_filtered_strategy():
+    import importlib.util
+    import os
+    path = os.path.join(os.path.dirname(__file__), "..", "strategies", "retail_sales_spike_filtered.py")
+    spec = importlib.util.spec_from_file_location("retail_sales_spike_filtered", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.FilteredDataReleaseStrategy
+
+
+def test_filtered_strategy_trades_on_real_spike(home):
+    cls = _load_filtered_strategy()
+    strategy = cls()
+    provider = make_provider("simulated", home)
+    account = provider.create_account("test", starting_balance=10000)
+    risk = RiskManager(risk_pct=0.01)
+    logger = TradeLogger(home, "test_filtered_spike")
+    sim = Simulator(strategy, provider, account.account_id, risk, logger, ticker="TEST")
+
+    base_time = dt.datetime(2026, 8, 14, 8, 20)
+    prices = [
+        5000, 5000, 5001, 5000, 5000,
+        5000, 5001, 5000, 5000.5, 5000,   # tight baseline window
+        5020, 5030, 5025, 5028, 5027,      # clear spike after release
+        5027, 5026,                          # basing -> entry
+        5070,                                  # -> target
+    ]
+    for i, p in enumerate(prices):
+        sim.feed_bar(Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)))
+    logger.write_csv()
+    summary = logger.summary()
+    assert summary["trades"] == 1
+    assert summary["wins"] == 1
+
+
+def test_filtered_strategy_stands_down_on_flat_day(home):
+    cls = _load_filtered_strategy()
+    strategy = cls()
+    provider = make_provider("simulated", home)
+    account = provider.create_account("test", starting_balance=10000)
+    risk = RiskManager(risk_pct=0.01)
+    logger = TradeLogger(home, "test_filtered_flat")
+    sim = Simulator(strategy, provider, account.account_id, risk, logger, ticker="TEST")
+
+    base_time = dt.datetime(2026, 8, 14, 8, 20)
+    # Mirrors the real Aug 14, 2026 case: a genuine data miss, but price
+    # essentially unmoved through the release and the rest of the session.
+    prices = [
+        5000, 5000.5, 5000, 5000.2, 5000,
+        5000.3, 5000, 5000.5, 5000.2, 5000,
+        5000.4, 5000.1, 5000.3, 5000.5, 5000.2,
+        5000.3, 5000.1, 5000.4, 5000.2, 5000, 5000.3, 5000.1,
+    ]
+    for i, p in enumerate(prices):
+        sim.feed_bar(Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)))
+    logger.write_csv()
+    summary = logger.summary()
+    assert summary.get("trades", 0) == 0
