@@ -9,11 +9,11 @@ working provider is `simulated`. Real-broker providers (Trading 212 demo,
 Interactive Brokers paper, OANDA practice) are scaffolded but deliberately
 left as stubs — see "Execution providers" below.
 
-**If you're an agent picking this project up, read `PROJECT_HISTORY.md`
+**If you're an agent picking this project up, read `CONTEXT.md`
 first.** It has the design decisions, bugs found and fixed, and what's
 actually been verified vs. not — context that isn't visible from the code
 alone. If you're being handed this as an ongoing takeover rather than a
-one-off task, `AGENT_PROMPT.md` has the details of what that means.
+one-off task, `HANDOFF.md` has the details of what that means.
 
 ## Install
 
@@ -48,27 +48,44 @@ moneymaker log --session <session-name-printed-above>
 ## Project layout
 
 ```
+AGENTS.md           agent/contributor conventions
+HANDOFF.md          ongoing ownership instructions for agents
+CONTEXT.md          chronological session history (append-only)
+PLAN.md             current roadmap and phase status
+BACKLOG.md          longer-horizon items and intelligence-layer plans
+PROPOSALS.md        engine improvement proposals (discuss before implementing)
+QUESTIONS.md        open questions parked for later — no instant answer needed
+PRD.md              product requirements (scope, non-requirements)
+
 moneymaker/
-  __init__.py
   config.py          filesystem-first data dir resolution (~/.moneymaker by default)
-  accounts.py         AccountManager (multi-account) + CredentialStore
-  data.py               historical/live price data via yfinance, disk-cached
-  strategy.py            Strategy interface, built-in strategies, drop-in loading
-  risk.py                  position sizing from % account risk
-  logger.py                 Trade record + CSV session logging
-  engine.py                  Simulator — the loop shared by backtest & live modes
-  server.py                   HTTP+JSON API (stdlib only, no extra deps)
-  cli.py                        argparse CLI entry point
+  accounts.py        AccountManager (multi-account) + CredentialStore
+  data.py            historical/live price data via yfinance, disk-cached
+  strategy.py        Strategy interface, built-in strategies, drop-in loading
+  risk.py            position sizing from % account risk
+  logger.py          Trade record + CSV session logging
+  engine.py          Simulator — the loop shared by backtest & live modes
+  multiwindow.py     multi-window backtest aggregation
+  optimizer.py       grid-search optimizer with train/test split
+  server.py          HTTP+JSON API (stdlib only, no extra deps)
+  cli.py             argparse CLI entry point
   providers/
-    base.py                      ExecutionProvider interface
-    simulated.py                   the only implemented provider
-    trading212.py                   stub
-    ibkr.py                          stub
-    oanda.py                          stub
-strategies/
-  example_momentum.py                example drop-in strategy
+    base.py          ExecutionProvider interface
+    simulated.py     the only implemented provider
+    trading212.py    stub
+    ibkr.py          stub
+    oanda.py         stub
+
+strategies/                         bundled strategies (loaded at runtime)
+  retail_sales_spike_filtered.py    data-release breakout with range-based stops
+  momentum_continuation.py          stub — follow spike on large surprises
+  opening_range_breakout.py         stub — ORB at 9:30 ET
+  vwap_reversion.py                 stub — VWAP mean reversion (needs volume in Bar)
+  example_momentum.py               example/template for custom strategies
+
 tests/
-  test_engine.py                       pytest suite, no network required
+  test_engine.py                    pytest suite, no network required
+  test_multiwindow_optimizer.py     multi-window + optimizer tests
 ```
 
 ## Data directory
@@ -196,7 +213,7 @@ The test suite runs entirely against synthetic price data — no network
 calls, no live yfinance requests. `backtest`/`live` against real tickers
 does need network access to Yahoo Finance and hasn't been exercised
 against live data as part of this repo's own test suite; see
-`AGENT_PROMPT.md` if you're having an agent verify that end of things
+`HANDOFF.md` if you're having an agent verify that end of things
 locally.
 
 ## Known limitations

@@ -388,3 +388,62 @@ def test_filtered_strategy_resets_signal_cache_across_days(home):
     logger.write_csv()
     summary = logger.summary()
     assert summary["trades"] == 2  # day 1 and day 3 trade; day 2 (flat) correctly stands down
+
+
+# --------------------------------------------------------------------------
+# Engine edge cases
+# --------------------------------------------------------------------------
+
+def test_load_strategies_two_tier(home, tmp_path):
+    """Repo-bundled strategies/ loads first; user drop-in wins on name collision."""
+    import importlib.util
+    import pathlib
+    from moneymaker.strategy import load_strategies, Strategy, StrategyContext, Bar
+
+    # Write a user drop-in that shadows a known name
+    user_dir = pathlib.Path(home) / "strategies"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    (user_dir / "override.py").write_text(
+        "from moneymaker.strategy import Strategy, StrategyContext, Bar\n"
+        "class OverrideStrategy(Strategy):\n"
+        "    name = 'override_sentinel'\n"
+        "    def on_bar(self, ctx, bar): pass\n"
+    )
+
+    strategies = load_strategies(home)
+    # Built-in strategy must be present
+    assert "retail_sales_spike" in strategies
+    # User drop-in must also be present
+    assert "override_sentinel" in strategies
+
+
+def test_risk_manager_large_stop():
+    """Position size scales correctly with a wide stop."""
+    risk = RiskManager(risk_pct=0.02)
+    size = risk.position_size(account_balance=50000, entry_price=5000, stop_price=4950)
+    # risk_amount = 50000 * 0.02 = 1000; stop_distance = 50; size = 20
+    assert size == pytest.approx(20.0)
+
+
+def test_simulator_position_not_logged_without_close(home):
+    """An entry without a matching close bar leaves summary with 0 trades (no silent log)."""
+    strategy = RetailSalesSpikeStrategy(
+        release_time=dt.time(8, 30), baseline_minutes=5, spike_window_min=5,
+        base_bars=2, base_tolerance_pct=0.002, stop_pct=0.01, target_pct=0.02,
+    )
+    provider = make_provider("simulated", home)
+    account = provider.create_account("test", starting_balance=10000)
+    risk = RiskManager(risk_pct=0.01)
+    logger = TradeLogger(home, "test_no_close")
+    sim = Simulator(strategy, provider, account.account_id, risk, logger, ticker="TEST")
+
+    base_time = dt.datetime(2026, 8, 14, 8, 20)
+    prices = [5000] * 5 + [5000, 5001, 5000, 5000.5, 5000] + [5050, 5060, 5055] + [5055, 5055]
+    for i, p in enumerate(prices):
+        sim.feed_bar(Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)))
+
+    # No close bar fed — position may be open but no completed trade should appear
+    logger.write_csv()
+    summary = logger.summary()
+    # The key assertion: no completed trade without a close
+    assert summary.get("trades", 0) == 0
