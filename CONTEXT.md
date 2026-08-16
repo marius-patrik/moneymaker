@@ -208,6 +208,50 @@ releases — calibrate it to the actual retail sales spike size (≥0.10–0.15%
 median 0.03% noise). Both approaches may recover signal, since the true retail sales
 release days showed larger, directional moves than the noise baseline.
 
+## Session: min_spike_pct calibration + spike-fade discovery (2026-08-16, Phase 2)
+
+**Goal:** calibrate `min_spike_pct` to actual release days to reduce noise trades.
+
+**Spike distribution analysis (all days in 60-day window):**
+Largest spikes (≥0.10%, 6 days): 2026-07-14 (0.463%), 2026-07-02 (0.202%),
+2026-06-25 (0.201%), 2026-07-15 (0.128%), 2026-06-23 (0.124%), 2026-08-07 (0.119%).
+Medium (0.05–0.10%, 7 days). Noise floor (<0.05%, 27 days, median ≈0.02%).
+Clear bimodal distribution: genuine economic releases vs daily background noise.
+
+**Threshold test results:**
+- `min_spike_pct=0.0` (default): 40 trades, 35% win rate, -1,083 P&L
+- `min_spike_pct=0.10%`: 6 trades, **0% win rate**, -812 P&L
+- `min_spike_pct=0.05%`: 13 trades, 15.4% win rate, -1,246 P&L
+
+**Key discovery: large spikes systematically FADE.**
+All 6 trades on qualifying release days (≥0.10% spike) were losers. The strategy
+enters in the spike direction after basing — but on real release days, the initial
+move overshoots and reverts. ES prices in macro surprises within 1–2 bars; by the
+time basing forms and a continuation breakout fires, the move is exhausted.
+
+Examples from 2026-07-14 (CPI, 0.463% long spike):
+- Spike: baseline 7560.75 → price ~7595 (+0.46%)
+- Basing at [7579.25–7579.50] (still elevated but cooling)
+- Strategy enters LONG at 7583 (continuation)
+- Immediately stopped at 7571 as price reverts toward baseline
+
+This pattern repeated across all 6 release days: spike → basing → breakout → stop.
+
+**Conclusion:** `min_spike_pct` filtering makes results worse, not better. The
+breakout-continuation approach is fundamentally wrong for actual release days.
+The spurious 35% unfiltered win rate came from noise days where direction was
+effectively random and tight stops limited damage. No configuration of the current
+strategy produces positive P&L.
+
+**Next direction (see PROPOSALS.md P008a):** FADE the spike on large releases
+rather than continuing it. A separate `retail_sales_spike_fade` strategy that
+enters AGAINST the spike direction after basing would test whether the observed
+fade behavior is systematic. Not implementing now — adding to backlog for next
+session's design discussion.
+
+**PLAN.md updated:** Phase 2 complete (finding: negative); Phase 3 now includes
+the fade-strategy design decision.
+
 ## Ownership handoff
 
 Starting from whenever you (the agent reading this) pick this up: you

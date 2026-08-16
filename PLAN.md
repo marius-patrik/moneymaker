@@ -14,12 +14,13 @@ Apply agents-superproject doc conventions. Create AGENTS.md, PLAN.md, PRD.md,
 QUESTIONS.md, PROPOSALS.md, TASKS.md. Fix README to match current file names.
 Add GitHub Actions CI. Review codebase and populate PROPOSALS.md.
 
-### Phase 2: Strategy signal quality [queued]
-`retail_sales_spike_filtered` currently fires ~40× in 60 days on noise spikes;
-retail sales releases only once monthly. Fix: calibrate `min_spike_pct` to actual
-release sizes (≥0.10–0.15% vs median noise 0.03%), or add a release-date filter.
-Target: ≤3 trades per 60-day window on real release events only. Run backtest,
-document findings in CONTEXT.md.
+### Phase 2: Strategy signal quality [complete — 2026-08-16]
+Finding: `min_spike_pct=0.10%` filtered to 6 real release days but got 0% win rate.
+Large spikes systematically FADE — the breakout-continuation approach is wrong for
+actual release days. See CONTEXT.md session 2026-08-16.
+
+Next strategy direction: **spike-fade** (enter against spike direction after basing).
+Proposed as P008a in PROPOSALS.md. Design discussion → implementation next session.
 
 ## Roadmap
 

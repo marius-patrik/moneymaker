@@ -68,6 +68,23 @@ Trading Economics) to auto-populate release dates. Proposal A is low-dependency
 and sufficient. Proposal B is more powerful but adds an external data dependency.
 See QUESTIONS.md Q3.
 
+**P008a — Spike-fade direction (counter-spike entry)** `[proposed]`
+Empirical finding (2026-08-16): on actual large-release days (spike ≥ 0.10%), the
+breakout-continuation approach gets 0% win rate. All 6 qualifying release-day
+trades were losers because the initial spike faded — the market overshot and
+reverted. Proposal: for large spikes, FADE the direction (enter against the spike)
+instead of continuing it.
+
+Entry logic change: when `spike_move_pct >= large_spike_threshold`, reverse the
+expected direction: a large up-spike → enter SHORT after the basing (fading the
+run-up); a large down-spike → enter LONG (buying the dip). Rationale: ES prices in
+macro surprises within 1–2 bars; the basing window represents the overshooting
+reaction cooling off; the trade fades back toward pre-release fair value.
+
+This would be a new strategy (`retail_sales_spike_fade`) rather than a parameter on
+the existing one — the semantics are different enough to warrant a separate class.
+See CONTEXT.md session 2026-08-16 for the backtest evidence.
+
 **P009 — Walk-forward window auto-generation** `[proposed]`
 The `optimize` command requires manually specifying `--train-windows` and
 `--test-windows` as date strings. Proposal: add a `--walk-forward N` mode that

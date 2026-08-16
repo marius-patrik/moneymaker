@@ -7,6 +7,14 @@ In-progress items live in CONTEXT.md's current session section.
 
 ## Strategy improvements
 
+### retail_sales_spike_fade — spike-fade strategy (NEXT)
+Empirical finding (2026-08-16): on real release days (spike ≥ 0.10%), ES
+systematically fades the initial spike — breakout-continuation gets 0% win rate.
+Proposed new strategy: fade the spike direction after basing forms. Enter AGAINST
+the spike direction once price bases; stop at spike extreme; target: pre-release
+baseline. See PROPOSALS.md P008a and CONTEXT.md session 2026-08-16 for evidence.
+Design discussion needed before implementation.
+
 ### retail_sales_spike_filtered — R:R fix (DONE 2026-08-16)
 Switched from fixed-% stop to basing-range stop + breakout entry.
 Stop distance now ≈ 3–5 pts (basing range width + buffer) vs prior 34 pts.

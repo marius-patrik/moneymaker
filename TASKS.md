@@ -21,13 +21,13 @@ Session: 2026-08-16 — Scaffolding + conventions + strategy signal quality
 - [ ] Test suite gaps: add missing coverage (see PROPOSALS.md P006, P003)
 - [ ] Commit + push Phase 1
 
-## Phase 2: Strategy signal quality [queued]
+## Phase 2: Strategy signal quality [complete]
 
-- [ ] Calibrate min_spike_pct: identify actual retail sales release dates in backtest window
-- [ ] Run backtest with min_spike_pct ≥ 0.10% (gate out noise)
-- [ ] Evaluate: trade count, win rate, P&L vs baseline
-- [ ] Consider P008 (release_dates list param) if threshold alone is insufficient
-- [ ] Commit + push Phase 2 with CONTEXT.md update
+- [x] Calibrate min_spike_pct: identify actual retail sales release dates in backtest window
+- [x] Run backtest with min_spike_pct ≥ 0.10% (gate out noise)
+- [x] Evaluate: trade count, win rate, P&L vs baseline
+- [x] Finding: 0% win rate on real release days — spike FADES, continuation approach is wrong
+- [x] Commit + push Phase 2 with CONTEXT.md + PROPOSALS.md update (fade approach P008a)
 
 ## Phase 3: Architectural decisions [discussion required]
 
