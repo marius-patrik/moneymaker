@@ -9,21 +9,25 @@ Premise:
 Flow:
   1. Track cumulative VWAP from the session open (9:30 ET).
      VWAP = Σ(price × volume) / Σ(volume), updated bar-by-bar.
-  2. Enter long when price is > deviation_pct below VWAP.
+  2. Regime filter: skip today if yesterday's intraday range exceeded
+     max_prev_day_range_pct. A wide prior-day range signals a trending/volatile
+     market regime where mean-reversion is unlikely to work.
+  3. Enter long when price is > deviation_pct below VWAP.
      Enter short when price is > deviation_pct above VWAP.
-  3. Stop: stop_multiple × entry_deviation from VWAP, on the far side.
-  4. Target: return to VWAP.
-  5. Hard exit at max_entry_time regardless.
+  4. Stop: stop_multiple × entry_deviation from entry, on the far side.
+  5. Target: entry + stop_dist × target_rr (positive R:R by construction).
+  6. Hard exit at hard_exit_time regardless.
 
 Why it might work:
   Institutional algos use VWAP as a benchmark. Large sellers push price below
   VWAP; reversion fires as they finish. Most reliable in morning with volume.
+  The regime filter gates out trending days where price stays extended for hours.
 
 Why it might not:
-  On trend days, price stays far from VWAP for hours. This strategy is
-  specifically a choppy/range-bound-day play.
+  The prior-day range filter is a lagging proxy for regime. A quiet prior day
+  followed by a trend day today will still produce bad entries.
 
-FORKS compare deviation thresholds and stop multiples.
+FORKS compare deviation thresholds and regime filter thresholds.
 """
 
 from __future__ import annotations
@@ -35,19 +39,20 @@ from engine.strategy import Bar, Strategy, StrategyContext, reset_session_if_new
 
 class VwapReversionStrategy(Strategy):
     """
-    Intraday VWAP mean-reversion: enter when price deviates from VWAP,
-    stop on further deviation, target at VWAP.
+    Intraday VWAP mean-reversion with prior-day range regime filter.
+    Only enters on low-volatility (choppy/range-bound) sessions.
     """
 
     name = "vwap_reversion"
     max_trades_per_session = 2
 
     FORKS = [
-        # target_rr=1.5 means risk 1× stop_dist to make 1.5× — positive R:R
-        ("vwap_rr15_wide",   "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5, "target_rr": 1.5}),
-        ("vwap_rr15_std",    "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 1.5, "target_rr": 1.5}),
-        ("vwap_rr20_wide",   "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5, "target_rr": 2.0}),
-        ("vwap_rr20_std",    "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 2.0, "target_rr": 2.0}),
+        # Regime filter ON (max_prev_day_range_pct gates trending days)
+        ("vwap_regime_tight",  "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 1.5, "target_rr": 1.5, "max_prev_day_range_pct": 0.008}),
+        ("vwap_regime_std",    "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5, "target_rr": 1.5, "max_prev_day_range_pct": 0.010}),
+        ("vwap_regime_wide",   "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5, "target_rr": 2.0, "max_prev_day_range_pct": 0.012}),
+        # No regime filter — baseline comparison
+        ("vwap_no_filter",     "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5, "target_rr": 1.5, "max_prev_day_range_pct": 0.0}),
     ]
 
     def __init__(
@@ -56,6 +61,7 @@ class VwapReversionStrategy(Strategy):
         deviation_pct: float = 0.002,
         stop_multiple: float = 2.0,
         target_rr: float = 1.5,
+        max_prev_day_range_pct: float = 0.010,
         max_entry_time: dt.time = dt.time(13, 0),
         hard_exit_time: dt.time = dt.time(15, 45),
         min_volume: float = 0.0,
@@ -64,6 +70,7 @@ class VwapReversionStrategy(Strategy):
         self.deviation_pct = deviation_pct
         self.stop_multiple = stop_multiple
         self.target_rr = target_rr
+        self.max_prev_day_range_pct = max_prev_day_range_pct
         self.max_entry_time = max_entry_time
         self.hard_exit_time = hard_exit_time
         self.min_volume = min_volume
@@ -71,7 +78,7 @@ class VwapReversionStrategy(Strategy):
     def _open_dt(self, bar_time: dt.datetime) -> dt.datetime:
         return dt.datetime.combine(bar_time.date(), self.open_time, tzinfo=bar_time.tzinfo)
 
-    def _vwap(self, ctx: StrategyContext, bar: Bar, open_dt: dt.datetime) -> float | None:
+    def _vwap(self, ctx: StrategyContext, open_dt: dt.datetime) -> float | None:
         """Compute cumulative VWAP from session open through current bar."""
         session_bars = [b for b in ctx.bars if b.time >= open_dt]
         sum_pv = sum(b.price * b.volume for b in session_bars)
@@ -79,6 +86,23 @@ class VwapReversionStrategy(Strategy):
         if sum_v == 0:
             return None
         return sum_pv / sum_v
+
+    def _prev_day_range_pct(self, ctx: StrategyContext, today: dt.date) -> float | None:
+        """
+        Intraday range of the prior calendar day as a fraction of mid-price.
+        Returns None if no prior-day bars exist yet (e.g. first day of data).
+        """
+        prev_date = today - dt.timedelta(days=1)
+        # Walk back up to 7 calendar days to find the most recent trading day
+        for _ in range(7):
+            prev_bars = [b for b in ctx.bars if b.time.date() == prev_date]
+            if prev_bars:
+                hi = max(b.price for b in prev_bars)
+                lo = min(b.price for b in prev_bars)
+                mid = (hi + lo) / 2
+                return (hi - lo) / mid if mid > 0 else None
+            prev_date -= dt.timedelta(days=1)
+        return None
 
     def on_bar(self, ctx: StrategyContext, bar: Bar) -> None:
         reset_session_if_new_day(ctx, bar)
@@ -114,7 +138,13 @@ class VwapReversionStrategy(Strategy):
         if self.min_volume > 0 and bar.volume < self.min_volume:
             return
 
-        vwap = self._vwap(ctx, bar, open_dt)
+        # Regime filter: skip if prior day was a trending/volatile session
+        if self.max_prev_day_range_pct > 0:
+            prev_range = self._prev_day_range_pct(ctx, bar.time.date())
+            if prev_range is None or prev_range > self.max_prev_day_range_pct:
+                return
+
+        vwap = self._vwap(ctx, open_dt)
         if vwap is None:
             return
 
@@ -130,8 +160,8 @@ class VwapReversionStrategy(Strategy):
         entry = bar.price
         entry_deviation = abs(bar.price - vwap)
         stop_dist = entry_deviation * self.stop_multiple
-
         target_dist = stop_dist * self.target_rr
+
         if direction == "long":
             ctx.stop_price = entry - stop_dist
             ctx.target_price = entry + target_dist
