@@ -89,6 +89,20 @@ def _run(cmd: list[str], check: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
 
 
+def _login_name() -> str:
+    """
+    Current user, for the loginctl hint.
+
+    os.getlogin() needs a controlling terminal and raises without one, which
+    is exactly the situation when this runs from a script or CI.
+    """
+    import getpass
+    try:
+        return getpass.getuser()
+    except Exception:
+        return "$USER"
+
+
 # ---------------------------------------------------------------- install
 
 def install(home: str, host: str = "127.0.0.1", port: int = 8787,
@@ -108,13 +122,23 @@ def install(home: str, host: str = "127.0.0.1", port: int = 8787,
               file=sys.stderr)
 
     if _is_macos():
-        # bootout first so reinstalling picks up a changed plist.
-        _run(["launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"])
-        r = _run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(target)])
-        if r.returncode != 0:
-            print(r.stderr.strip(), file=sys.stderr)
-            raise RuntimeError("launchctl bootstrap failed")
-        print(f"Loaded {LABEL} (starts at login).")
+        # Unload first so reinstalling picks up a changed plist. bootout is
+        # asynchronous, so wait for it — bootstrapping while the old job is
+        # still registered fails outright.
+        if _is_loaded():
+            _service_stop(quiet=True)
+        if start:
+            # bootstrap registers the job; RunAtLoad then starts it, so on
+            # macOS loading and starting are the same act. With --no-start we
+            # leave it unloaded and let `service start` do both later.
+            r = _run(["launchctl", "bootstrap", _domain(), str(target)])
+            if r.returncode != 0:
+                print(r.stderr.strip() or r.stdout.strip(), file=sys.stderr)
+                raise RuntimeError("launchctl bootstrap failed")
+            print(f"Loaded {LABEL} — running, and starts at login.")
+        else:
+            print(f"Not loaded. Run `moneymaker service start` to run it and "
+                  f"enable start-at-login.")
     else:
         _run(["systemctl", "--user", "daemon-reload"])
         r = _run(["systemctl", "--user", "enable", UNIT])
@@ -122,12 +146,13 @@ def install(home: str, host: str = "127.0.0.1", port: int = 8787,
             print(r.stderr.strip(), file=sys.stderr)
         print(f"Enabled {UNIT} (starts at login).")
         print("Note: user services stop at logout unless lingering is on.\n"
-              f"      Enable it with: sudo loginctl enable-linger {os.getlogin()}")
+              f"      Enable it with: sudo loginctl enable-linger {_login_name()}")
+        if start:
+            _service_start()
 
     if start:
-        _service_start()
-    print(f"\n  Web UI   http://{host}:{port}")
-    print(f"  Logs     {_log_dir(home)}/server.log")
+        print(f"\n  Web UI   http://{host}:{port}")
+        print(f"  Logs     {_log_dir(home)}/server.log")
 
 
 def uninstall() -> None:

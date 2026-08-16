@@ -7,8 +7,12 @@
   below and writes the result to ~/Library/LaunchAgents/. Editing this file
   in place does nothing on its own — it is a template.
 
-  Runs `serve --prod`: the UI is built and served by the API on one port, so
-  there is no bun process to supervise and nothing depends on a dev server.
+  Runs serve in production mode: the UI is built and served by the API on one
+  port, so there is no bun process to supervise and nothing depends on a dev
+  server.
+
+  NB: XML comments may not contain a double hyphen, so flags are spelled out
+  in prose here rather than written literally.
 -->
 <plist version="1.0">
 <dict>

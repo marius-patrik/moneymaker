@@ -128,6 +128,7 @@ tests/
   test_installer.py                 strategy install/upgrade tests
   test_agents.py                    fork-eval + evolution tests
   test_jobs.py                      background job runner tests
+  test_service.py                   launchd/systemd template + path tests
 ```
 
 ## Data directory
@@ -429,7 +430,7 @@ pytest
 ```
 
 The test suite runs entirely against synthetic price data — no network
-calls, no live yfinance requests. All 55 tests pass on Python 3.11 and 3.12.
+calls, no live yfinance requests. All 67 tests pass on Python 3.11 and 3.12.
 CI runs on every push via GitHub Actions (`.github/workflows/ci.yml`), which
 also typechecks and builds the web UI.
 
