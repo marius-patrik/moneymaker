@@ -251,6 +251,26 @@ def _parse_windows(spec: str) -> list[tuple[str, str]]:
     return windows
 
 
+def _generate_walk_forward_windows(start: str, end: str, n: int) -> list[tuple[str, str]]:
+    """Split [start, end) into N equal-sized date windows."""
+    s = dt.date.fromisoformat(start)
+    e = dt.date.fromisoformat(end)
+    total_days = (e - s).days
+    if total_days <= 0:
+        raise ValueError(f"--wf-start must be before --wf-end, got {start} to {end}")
+    if n < 1:
+        raise ValueError(f"--walk-forward must be >= 1, got {n}")
+    window_days = total_days / n
+    windows = []
+    for i in range(n):
+        ws = s + dt.timedelta(days=round(i * window_days))
+        we = s + dt.timedelta(days=round((i + 1) * window_days))
+        if i == n - 1:
+            we = e  # avoid rounding drift on last window
+        windows.append((ws.isoformat(), we.isoformat()))
+    return windows
+
+
 def cmd_backtest_multi(args):
     home = get_home(args.data_dir)
     strategies = load_strategies(home)
@@ -260,7 +280,19 @@ def cmd_backtest_multi(args):
         sys.exit(1)
     overrides = _parse_param_overrides(getattr(args, "param", None) or [], strategy_cls)
     try:
-        windows = _parse_windows(args.windows)
+        if getattr(args, "walk_forward", None):
+            if not args.wf_start or not args.wf_end:
+                print("--walk-forward requires --wf-start and --wf-end", file=sys.stderr)
+                sys.exit(1)
+            windows = _generate_walk_forward_windows(args.wf_start, args.wf_end, args.walk_forward)
+            print(f"Walk-forward: {args.walk_forward} windows from {args.wf_start} to {args.wf_end}")
+            for s, e in windows:
+                print(f"  {s} → {e}")
+        elif args.windows:
+            windows = _parse_windows(args.windows)
+        else:
+            print("Provide either --windows or --walk-forward with --wf-start/--wf-end", file=sys.stderr)
+            sys.exit(1)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
@@ -580,8 +612,14 @@ def main():
     p_mw = sub.add_parser("backtest-multi", help="Run a strategy across several historical windows and aggregate results.")
     p_mw.add_argument("--strategy", required=True)
     p_mw.add_argument("--ticker", required=True)
-    p_mw.add_argument("--windows", required=True,
+    # Manual window list (mutually exclusive with --walk-forward)
+    p_mw.add_argument("--windows", default=None,
                        help="Comma-separated START:END pairs, e.g. '2026-06-01:2026-07-01,2026-07-01:2026-08-01'")
+    # Auto walk-forward (alternative to --windows)
+    p_mw.add_argument("--walk-forward", type=int, default=None, metavar="N",
+                      help="Auto-split --wf-start:--wf-end into N equal windows (alternative to --windows).")
+    p_mw.add_argument("--wf-start", default=None, metavar="DATE", help="Start date for walk-forward, YYYY-MM-DD")
+    p_mw.add_argument("--wf-end", default=None, metavar="DATE", help="End date for walk-forward, YYYY-MM-DD")
     p_mw.add_argument("--interval", default="5m")
     p_mw.add_argument("--account", type=float, default=10000.0)
     p_mw.add_argument("--risk-pct", type=float, default=0.01)

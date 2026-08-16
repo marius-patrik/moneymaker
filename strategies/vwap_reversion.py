@@ -43,10 +43,11 @@ class VwapReversionStrategy(Strategy):
     max_trades_per_session = 2
 
     FORKS = [
-        ("vwap_tight",    "vwap_reversion", {"deviation_pct": 0.001, "stop_multiple": 2.0}),
-        ("vwap_standard", "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 2.0}),
-        ("vwap_wide",     "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5}),
-        ("vwap_loose",    "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 1.5}),
+        # target_rr=1.5 means risk 1× stop_dist to make 1.5× — positive R:R
+        ("vwap_rr15_wide",   "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5, "target_rr": 1.5}),
+        ("vwap_rr15_std",    "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 1.5, "target_rr": 1.5}),
+        ("vwap_rr20_wide",   "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5, "target_rr": 2.0}),
+        ("vwap_rr20_std",    "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 2.0, "target_rr": 2.0}),
     ]
 
     def __init__(
@@ -54,6 +55,7 @@ class VwapReversionStrategy(Strategy):
         open_time: dt.time = dt.time(9, 30),
         deviation_pct: float = 0.002,
         stop_multiple: float = 2.0,
+        target_rr: float = 1.5,
         max_entry_time: dt.time = dt.time(13, 0),
         hard_exit_time: dt.time = dt.time(15, 45),
         min_volume: float = 0.0,
@@ -61,6 +63,7 @@ class VwapReversionStrategy(Strategy):
         self.open_time = open_time
         self.deviation_pct = deviation_pct
         self.stop_multiple = stop_multiple
+        self.target_rr = target_rr
         self.max_entry_time = max_entry_time
         self.hard_exit_time = hard_exit_time
         self.min_volume = min_volume
@@ -128,12 +131,13 @@ class VwapReversionStrategy(Strategy):
         entry_deviation = abs(bar.price - vwap)
         stop_dist = entry_deviation * self.stop_multiple
 
+        target_dist = stop_dist * self.target_rr
         if direction == "long":
             ctx.stop_price = entry - stop_dist
-            ctx.target_price = vwap
+            ctx.target_price = entry + target_dist
         else:
             ctx.stop_price = entry + stop_dist
-            ctx.target_price = vwap
+            ctx.target_price = entry - target_dist
 
         ctx.position_open = True
         ctx.entry_price = entry

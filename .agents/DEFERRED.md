@@ -60,6 +60,48 @@ walk-forward held-out windows; begin scoping the interaction layer then.
 
 ---
 
+## vwap_reversion — regime filter required
+
+vwap_reversion loses money across all parameter variants on SPY 5m (2026-06-18 to
+2026-08-16): even with corrected R:R (target = entry + stop_dist × target_rr), all
+forks are negative. Root cause: SPY 2026 has been trending, not range-bound. VWAP
+reversion is a mean-reversion strategy that only works when the market is choppy.
+
+Strategy needs a regime filter before it can be deployed. Candidates:
+- ADX < threshold on prior day's 1d bar (indicates low directional movement)
+- Intraday realized volatility check: skip if prior-day range > X% of price
+- Prior-day close-to-open gap check: skip if gap > Y%
+- Volume-weighted slope of VWAP: skip if VWAP is trending significantly intraday
+
+**Trigger:** user asks to implement a regime filter, or a new market regime (sustained
+choppy/range-bound period) makes the untouched version worth re-testing first.
+
+---
+
+## CL=F (crude oil) trend_momentum
+
+CL=F shows no consistent MA crossover profitability across 4 annual windows. The
+gc_evolved parameters that work on GC=F produce -2927 on ZN=F and erratic results
+on CL=F. The ma_10_50 baseline (CL=F) starts at score=-inf (evolution couldn't improve).
+Crude oil trades on geopolitical supply shocks more than secular trends, making simple
+MA crossover unreliable.
+
+**Trigger:** user specifically asks to explore crude oil, or a multi-year commodity
+bull/bear run in crude creates conditions similar to the 2022–2026 gold secular trend.
+
+---
+
+## ZN=F (10-yr Treasury) trend_momentum — weakly promising
+
+ma_10_50 on ZN=F: 3/4 windows profitable, +299 total over 4 years. Evolved params
+(fast=6, slow=50, stop_pct=0.024) give score=+216 but last window (2025-2026) negative.
+Not strong enough to deploy alongside GC=F, but the signal exists.
+
+**Trigger:** user asks to revisit bonds, or a clear Fed policy trend cycle (rates rising
+or falling steadily for 1+ years) creates conditions that favor slower MA crossover.
+
+---
+
 ## Stub provider implementation (trading212_demo, ibkr_paper, oanda_practice)
 
 Each stub needs a separate, explicit session discussion before wiring any real

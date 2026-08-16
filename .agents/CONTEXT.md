@@ -384,6 +384,55 @@ All strategies synced to `~/.moneymaker/strategies/` via `upgrade-strategies`. 4
 - Explore trend_momentum on CL=F (crude oil) and ZN=F (bonds).
 - P009: walk-forward window auto-generation in optimizer (`--walk-forward N` flag).
 
+## Session: multi-ticker validation + P009 + vwap_reversion R:R fix (2026-08-16, Phase 6)
+
+**Multi-ticker fork-eval results:**
+
+CL=F (crude oil, 4-year walk-forward, all 5 trend_momentum forks):
+- gc_evolved wins total (+3465) but driven by ONE trade at +6,722 in April 2026.
+  Remove that trade and it's deeply negative. 0% window consistency — not deployable.
+- ma_10_50 on CL=F: evolution returned score=-inf (no viable configurations).
+- Conclusion: crude oil is too noisy for simple MA crossover. Deferred.
+
+ZN=F (10-yr Treasury, 4-year walk-forward, all 5 forks):
+- ma_10_50 wins (+299 total, 3/4 windows profitable). gc_evolved catastrophic (-2927):
+  the 0.53% stop gets hit constantly on treasury bonds (smaller daily ranges).
+- Evolution from ma_10_50: best params `fast=6, slow=50, stop_pct=0.024`, score=+216.
+  BUT 2025-2026 window still negative (-71). Not all-4-profitable like GC=F.
+- Conclusion: weakly promising but not confirmed. Deferred until Fed cycle creates a clear
+  multi-year trend direction.
+
+vwap_reversion (SPY 5m, 4 windows, June–August 2026):
+- All 4 FORKS negative across all windows, even with corrected R:R (target_rr=1.5/2.0).
+  The target was previously = VWAP (reward < risk by construction). After the fix, target
+  is now entry + stop_dist × target_rr (positive R:R). Still losing.
+- Root cause: SPY 2026 is trending, not choppy. VWAP reversion requires range-bound days.
+- Conclusion: needs a regime filter (ADX < threshold, prior-day range check, etc.) before
+  it can be deployed. Strategy code is correct; entry thesis needs a trend-day gate.
+  Deferred to DEFERRED.md with implementation notes.
+
+**Confirmed profitable strategies (only):**
+- `trend_momentum` on GC=F with gc_evolved params — the only strategy with 100% window
+  consistency across a 4-year walk-forward. All other strategies and tickers fail to meet
+  the bar.
+
+**P009 — walk-forward auto-generation:**
+`backtest-multi` now accepts `--walk-forward N --wf-start DATE --wf-end DATE` to auto-split
+a date range into N equal windows. Equivalent to manually specifying the same windows with
+`--windows`. `_generate_walk_forward_windows(start, end, n)` added to cli.py.
+
+Example: `moneymaker backtest-multi --strategy trend_momentum --ticker GC=F --interval 1d
+--walk-forward 4 --wf-start 2022-01-01 --wf-end 2026-01-01 --account 10000`
+generates exactly the 4 annual windows used in the GC=F walk-forward.
+
+**vwap_reversion R:R fix:**
+Added `target_rr: float = 1.5` parameter. Target now = entry + stop_dist × target_rr
+(positive R:R) instead of hardcoded at VWAP. FORKS updated to use target_rr=1.5 and 2.0
+variants. The fix is correct but doesn't overcome the regime mismatch problem.
+
+**State:** GC=F gc_evolved is the only deployable strategy. All other strategies moved to
+DEFERRED with notes on what would unlock them.
+
 ## Ownership handoff
 
 Starting from whenever you (the agent reading this) pick this up: you
