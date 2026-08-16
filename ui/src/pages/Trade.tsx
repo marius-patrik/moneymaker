@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { ArrowUpRight, ArrowDownRight, Loader2, Star } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Loader2, Star, CandlestickChart, LineChart } from "lucide-react";
 import { Panel, Stat } from "@/components/terminal/Panel";
 import { EmptyState, ErrorState } from "@/components/terminal/States";
 import { TickerSearch } from "@/components/terminal/TickerSearch";
@@ -11,43 +10,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/lib/useResource";
-import { api, type PriceHistory } from "@/lib/api";
+import { PriceChart, OhlcReadout, type ChartKind } from "@/components/terminal/PriceChart";
+import { PositionsPanel } from "@/components/terminal/PositionsPanel";
+import { api, type Candle } from "@/lib/api";
 import { cn, fmt, fmtDollar, fmtPct } from "@/lib/utils";
 
 const WATCH_KEY = "mm.watchlist";
 const TICKER_KEY = "mm.ticker";
 const DEFAULT_WATCH = ["GC=F", "ES=F", "NQ=F", "CL=F", "SPY"];
 
-function Chart({ hist }: { hist: PriceHistory }) {
-  const stroke = hist.change >= 0 ? "hsl(var(--profit))" : "hsl(var(--loss))";
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={hist.bars} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id="tpx" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={stroke} stopOpacity={0.24} />
-            <stop offset="100%" stopColor={stroke} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <XAxis dataKey="t" hide />
-        <YAxis domain={["dataMin", "dataMax"]} hide />
-        <Tooltip formatter={(v: number) => [fmt(v), "Price"]}
-                 labelFormatter={(l) => String(l).replace("T", " ")}
-                 contentStyle={{ background: "hsl(var(--popover))",
-                                 border: "1px solid hsl(var(--border))",
-                                 borderRadius: 10, fontSize: 11 }} />
-        <Area type="monotone" dataKey="c" stroke={stroke} strokeWidth={1.6}
-              fill="url(#tpx)" dot={false} />
-      </AreaChart>
-    </ResponsiveContainer>
-  );
-}
+/** Interval paired with a lookback that yields a useful number of bars. */
+const TIMEFRAMES = [
+  { label: "5m", interval: "5m", days: 5 },
+  { label: "15m", interval: "15m", days: 10 },
+  { label: "1h", interval: "1h", days: 30 },
+  { label: "1d", interval: "1d", days: 365 },
+  { label: "1wk", interval: "1wk", days: 1825 },
+] as const satisfies readonly { label: string; interval: string; days: number }[];
 
 /** One watchlist row: symbol, last, change. */
 function WatchRow({ symbol, active, onSelect, onRemove }: {
   symbol: string; active: boolean; onSelect: () => void; onRemove: () => void;
 }) {
-  const h = useResource(() => api.orders.history(symbol, "1h", 3), [symbol], { pollMs: 60000 });
+  const h = useResource(() => api.orders.history(symbol, "1d", 30), [symbol], { pollMs: 60000 });
   const d = h.data;
   const up = (d?.change ?? 0) >= 0;
   return (
@@ -59,7 +44,7 @@ function WatchRow({ symbol, active, onSelect, onRemove }: {
           <span className="block font-mono text-xs tabular-nums">
             {d?.last != null ? fmt(d.last) : h.loading ? "…" : "—"}
           </span>
-          {d && d.bars.length > 1 && (
+          {d && d.candles.length > 1 && (
             <span className={cn("block font-mono text-[10px] tabular-nums",
                                 up ? "text-profit" : "text-loss")}>
               {up ? "+" : ""}{fmtPct(d.change_pct)}
@@ -92,9 +77,15 @@ export function Trade() {
   const [size, setSize] = useState("1");
   const [accountId, setAccountId] = useState("");
   const [placing, setPlacing] = useState<"long" | "short" | null>(null);
+  const [posNonce, setPosNonce] = useState(0);
+  const [tf, setTf] = useState<{ interval: string; days: number; label: string }>(
+    TIMEFRAMES[2]);
+  const [kind, setKind] = useState<ChartKind>("candles");
+  const [hover, setHover] = useState<Parameters<NonNullable<Parameters<typeof PriceChart>[0]["onHover"]>>[0]>(null);
 
   const accounts = useResource(() => api.accounts.list(), []);
-  const hist = useResource(() => api.orders.history(ticker, "1h", 5), [ticker], { pollMs: 45000 });
+  const hist = useResource(() => api.orders.history(ticker, tf.interval, tf.days),
+                           [ticker, tf.interval, tf.days], { pollMs: 45000 });
 
   useEffect(() => { localStorage.setItem(WATCH_KEY, JSON.stringify(watch)); }, [watch]);
   useEffect(() => { localStorage.setItem(TICKER_KEY, ticker); }, [ticker]);
@@ -117,6 +108,7 @@ export function Trade() {
       toast(`${direction === "long" ? "Bought" : "Sold"} ${r.size} ${r.ticker} @ ${fmt(r.fill_price)}`,
             "success");
       accounts.reload();
+      setPosNonce((n) => n + 1);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Order rejected", "error");
     }
@@ -135,7 +127,7 @@ export function Trade() {
       <aside className="hidden w-60 shrink-0 flex-col border-r bg-card/40 lg:flex">
         <div className="flex h-11 shrink-0 items-center border-b px-3">
           <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-            Watchlist
+            Search
           </span>
         </div>
         <div className="shrink-0 border-b p-2">
@@ -158,32 +150,48 @@ export function Trade() {
 
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
           <Panel title={ticker}
-                 actions={<span className="font-mono text-[10px] text-muted-foreground">1h · 5d</span>}>
+                 actions={
+                   <div className="flex items-center gap-1">
+                     <div className="flex rounded-md bg-muted/70 p-0.5">
+                       {TIMEFRAMES.map((t) => (
+                         <button key={t.label} onClick={() => setTf(t)}
+                                 className={cn("rounded px-1.5 py-0.5 font-mono text-[10px] transition-colors",
+                                   tf.label === t.label ? "bg-background text-foreground shadow-sm"
+                                                        : "text-muted-foreground hover:text-foreground")}>
+                           {t.label}
+                         </button>
+                       ))}
+                     </div>
+                     <button onClick={() => setKind((k) => (k === "candles" ? "line" : "candles"))}
+                             aria-label={kind === "candles" ? "Switch to line chart" : "Switch to candles"}
+                             className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+                       {kind === "candles" ? <CandlestickChart className="h-3.5 w-3.5" />
+                                           : <LineChart className="h-3.5 w-3.5" />}
+                     </button>
+                   </div>
+                 }>
             <div className="space-y-3">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <div className="flex items-baseline gap-3">
                   <span className="font-mono text-[26px] font-semibold tabular-nums tracking-tight">
                     {last != null ? fmt(last) : "—"}
                   </span>
-                  {d && d.bars.length > 1 && (
+                  {d && d.candles.length > 1 && (
                     <span className={cn("font-mono text-sm font-medium tabular-nums",
                                         up ? "text-profit" : "text-loss")}>
                       {up ? "+" : ""}{fmt(d.change)} ({fmtPct(d.change_pct)})
                     </span>
                   )}
                 </div>
-                <div className="flex gap-4 font-mono text-[11px] tabular-nums text-muted-foreground">
-                  <span>H {d?.high != null ? fmt(d.high) : "—"}</span>
-                  <span>L {d?.low != null ? fmt(d.low) : "—"}</span>
-                </div>
+                <OhlcReadout hover={hover} fallback={d?.candles[d.candles.length - 1]} />
               </div>
-              <div className="h-80">
-                {hist.error ? <ErrorState message={hist.error} onRetry={hist.reload} />
-                  : !hist.settled ? <div className="flex h-full items-center justify-center">
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-                  : d && d.bars.length > 1 ? <Chart hist={d} />
-                  : <EmptyState title="No price data" hint={`Nothing returned for ${ticker}.`} />}
-              </div>
+              {hist.error ? <div className="h-[380px]"><ErrorState message={hist.error} onRetry={hist.reload} /></div>
+                : !hist.settled ? <div className="flex h-[380px] items-center justify-center">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+                : d && d.candles.length > 1
+                  ? <PriceChart candles={d.candles} kind={kind} height={380} onHover={setHover} />
+                  : <div className="h-[380px]"><EmptyState title="No price data"
+                      hint={`Nothing returned for ${ticker} at ${tf.label}.`} /></div>}
             </div>
           </Panel>
 
@@ -235,6 +243,10 @@ export function Trade() {
               </div>
             </div>
           </Panel>
+          <div className="xl:col-span-2">
+            <PositionsPanel accountId={accountId || undefined} refreshKey={posNonce}
+                            onChanged={() => { accounts.reload(); setPosNonce((n) => n + 1); }} />
+          </div>
         </div>
       </div>
     </div>

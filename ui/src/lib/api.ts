@@ -45,9 +45,19 @@ const del = <T>(path: string) => req<T>("DELETE", path);
 export interface Strategy {
   name: string;
   doc: string;
-  source: "built-in" | "bundled" | "custom";
   editable?: boolean;
   params: Record<string, unknown>;
+}
+
+export interface StrategyStats {
+  runs: number;
+  trades: number;
+  total_pnl: number;
+  win_rate: number | null;
+  profit_factor: number | null;
+  best: number | null;
+  worst: number | null;
+  last_run: string;
 }
 
 export interface Provider {
@@ -83,12 +93,20 @@ export interface Instrument {
   exchange: string;
 }
 
-export interface PriceBar { t: string; c: number }
+export interface Candle {
+  /** UNIX seconds — what lightweight-charts indexes on. */
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
 
 export interface PriceHistory {
   ticker: string;
   interval: string;
-  bars: PriceBar[];
+  candles: Candle[];
   last: number | null;
   change: number;
   change_pct: number;
@@ -117,6 +135,8 @@ export interface PnlDistribution {
 
 export interface PositionRow {
   run: string;
+  /** Present only for manual positions, which can be closed by hand. */
+  id?: string;
   ticker: string;
   direction: string;
   size: number | null;
@@ -128,6 +148,25 @@ export interface PositionRow {
   pnl: number | null;
   pnl_pct: string;
   account_id: string;
+}
+
+export interface PositionDetail {
+  id: string;
+  account_id: string;
+  ticker: string;
+  direction: string;
+  size: number;
+  entry_price: number;
+  entry_time: string;
+  mark: number | null;
+  unrealised_pnl: number | null;
+}
+
+export interface ClosedPosition extends PositionDetail {
+  exit_price: number;
+  exit_time: string;
+  exit_reason: string;
+  pnl: number;
 }
 
 export interface PositionsResponse {
@@ -269,6 +308,10 @@ export interface OptimizeResult {
 export const api = {
   strategies: {
     list: () => get<{ strategies: Strategy[] }>("/strategies"),
+    stats: () => get<{ stats: Record<string, StrategyStats> }>("/strategies/stats"),
+    duplicate: (name: string, newName?: string) =>
+      post<{ name: string; path: string }>(
+        `/strategies/${name}/duplicate${newName ? `?new_name=${encodeURIComponent(newName)}` : ""}`, {}),
     source: (name: string) =>
       get<{ name: string; source: string; path: string }>(`/strategies/${name}/source`),
     create: (body: { name: string; source?: string; overwrite?: boolean }) =>
@@ -332,7 +375,7 @@ export const api = {
                  size: number; fill_price: number; balance: number }>("/orders", body),
     search: (q: string) =>
       get<{ results: Instrument[] }>(`/search?q=${encodeURIComponent(q)}`),
-    history: (ticker: string, interval = "1h", days = 5) =>
+    history: (ticker: string, interval = "1h", days = 30) =>
       get<PriceHistory>(
         `/history/${encodeURIComponent(ticker)}?interval=${interval}&days=${days}`),
     quote: (ticker: string) =>
@@ -343,6 +386,8 @@ export const api = {
     list: (accountId?: string) =>
       get<PositionsResponse>(
         `/positions${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ""}`),
+    get: (id: string) => get<PositionDetail>(`/positions/${id}`),
+    close: (id: string) => post<ClosedPosition>(`/positions/${id}/close`, {}),
   },
   jobs: {
     list: () => get<{ jobs: Job[] }>("/jobs"),

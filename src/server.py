@@ -277,39 +277,117 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
     @api.get("/strategies")
     def list_strategies():
         """
-        Strategies with where each came from.
+        Every strategy, all of them the user's to edit.
 
-        "custom" used to mean anything not in BUILTIN_STRATEGIES, which
-        labelled every strategy that ships with the repo as the user's own.
-        A file that matches one in strategies/ is bundled; only genuinely
-        user-written files are custom.
+        The ones in the repo are starting points that get copied into the
+        data directory on install — not a privileged class — so no
+        provenance is reported. `editable` says whether a file exists to
+        edit, which is the only distinction that affects what you can do.
         """
-        from src.installer import _bundled_dir
-        try:
-            bundled = {p.stem for p in _bundled_dir().glob("*.py")
-                       if not p.name.startswith("_")}
-        except OSError:
-            bundled = set()
-
         strategies = load_strategies(state.home)
-        out = []
-        for n, c in strategies.items():
-            if n in BUILTIN_STRATEGIES:
-                origin = "built-in"
-            elif n in bundled:
-                origin = "bundled"
-            else:
-                origin = "custom"
-            out.append({
+        return {"strategies": [
+            {
                 "name": n,
                 "doc": (c.__doc__ or "").strip().split("\n")[0],
-                "source": origin,
-                "editable": origin == "custom" or (
-                    pathlib.Path(state.home) / "strategies" / f"{n}.py").is_file(),
+                "editable": (pathlib.Path(state.home) / "strategies" / f"{n}.py").is_file(),
                 "params": {k: _jsonable(v) for k, v in c.params().items()}
                           if hasattr(c, "params") else {},
-            })
-        return {"strategies": out}
+            }
+            for n, c in strategies.items()
+        ]}
+
+    @api.get("/strategies/stats")
+    def strategy_stats():
+        """
+        Per-strategy performance, read from the session logs.
+
+        Session files are named <kind>_<strategy>_<detail>, so a run can be
+        attributed to the strategy that produced it without extra bookkeeping.
+        """
+        names = sorted(load_strategies(state.home), key=len, reverse=True)
+        sess = pathlib.Path(state.home) / "sessions"
+        agg: dict[str, dict] = {}
+
+        if sess.is_dir():
+            for path in sess.glob("*.csv"):
+                stem = path.stem
+                owner = next((n for n in names if n in stem), None)
+                if not owner:
+                    continue
+                try:
+                    with open(path) as f:
+                        rows = list(csv.DictReader(f))
+                except OSError:
+                    continue
+                a = agg.setdefault(owner, {"runs": 0, "pnls": [], "last": ""})
+                a["runs"] += 1
+                mtime = dt.datetime.fromtimestamp(path.stat().st_mtime).isoformat(
+                    timespec="seconds")
+                a["last"] = max(a["last"], mtime)
+                for r in rows:
+                    v = _num(r.get("pnl"))
+                    if v is not None:
+                        a["pnls"].append(v)
+
+        out = {}
+        for name, a in agg.items():
+            pnls = a["pnls"]
+            wins = [v for v in pnls if v > 0]
+            losses = [v for v in pnls if v < 0]
+            out[name] = {
+                "runs": a["runs"],
+                "trades": len(pnls),
+                "total_pnl": round(sum(pnls), 2),
+                "win_rate": round(len(wins) / len(pnls), 4) if pnls else None,
+                "profit_factor": (round(sum(wins) / abs(sum(losses)), 2)
+                                  if losses and sum(losses) else None),
+                "best": round(max(pnls), 2) if pnls else None,
+                "worst": round(min(pnls), 2) if pnls else None,
+                "last_run": a["last"],
+            }
+        return {"stats": out}
+
+    @api.post("/strategies/{name}/duplicate")
+    def duplicate_strategy(name: str, new_name: Optional[str] = None):
+        """
+        Copy a strategy into the data directory so it can be edited.
+
+        Strategies defined in code have no file to open; duplicating one
+        writes a subclass that inherits the behaviour and exposes it for
+        editing, so nothing in the app is off-limits to the user.
+        """
+        strategies = load_strategies(state.home)
+        cls = strategies.get(name)
+        if not cls:
+            raise HTTPException(404, f"unknown strategy: {name}")
+
+        target = (new_name or f"{name}_copy").strip()
+        if not target.isidentifier():
+            raise HTTPException(400, "name must be a valid Python identifier")
+
+        dest = pathlib.Path(state.home) / "strategies" / f"{target}.py"
+        if dest.exists():
+            raise HTTPException(409, f"'{target}' already exists")
+
+        src_file = pathlib.Path(state.home) / "strategies" / f"{name}.py"
+        if src_file.is_file():
+            source = src_file.read_text().replace(f'name = "{name}"', f'name = "{target}"')
+        else:
+            # Defined in code — subclass it so the copy is editable.
+            source = (
+                f'"""Copy of {name}, editable."""\n\n'
+                f"from {cls.__module__} import {cls.__name__}\n\n\n"
+                f"class {cls.__name__}Copy({cls.__name__}):\n"
+                f'    """Edit freely — this is your copy of {name}."""\n\n'
+                f'    name = "{target}"\n'
+            )
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(source)
+        if target not in load_strategies(state.home):
+            dest.unlink(missing_ok=True)
+            raise HTTPException(400, f"copy did not register as '{target}'")
+        return {"name": target, "path": str(dest)}
 
     @api.get("/strategies/{name}/source")
     def get_strategy_source(name: str):
@@ -715,13 +793,14 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         ]}
 
     @api.get("/history/{ticker:path}")
-    def get_history(ticker: str, interval: str = "5m", days: int = 5,
+    def get_history(ticker: str, interval: str = "1h", days: int = 30,
                     data_provider: str = "yfinance"):
         """
-        Recent bars for the trading chart.
+        OHLCV candles for the chart.
 
-        Kept deliberately small — a ticket chart wants shape and a current
-        level, not a full research dataset.
+        Full bars rather than closes: a candle carries the range and the
+        direction of each period, which a line hides. Times are emitted as
+        UNIX seconds because that is what the charting library indexes on.
         """
         from src.data_providers import make_data_provider
         end = dt.datetime.now()
@@ -732,21 +811,46 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         if df is None or len(df) == 0:
             raise HTTPException(400, f"no bars for {ticker} at {interval}")
 
-        col = "Close" if "Close" in df.columns else df.columns[0]
-        bars = [
-            {"t": str(idx)[:19], "c": float(row)}
-            for idx, row in df[col].items()
-            if row == row          # drop NaN
-        ]
-        closes = [b["c"] for b in bars]
+        def col(name: str):
+            return df[name] if name in df.columns else None
+
+        o, h, l, c, v = (col("Open"), col("High"), col("Low"),
+                         col("Close"), col("Volume"))
+        if c is None:
+            raise HTTPException(400, f"no close prices for {ticker}")
+
+        candles = []
+        for i, idx in enumerate(df.index):
+            close = float(c.iloc[i])
+            if close != close:          # NaN
+                continue
+            def at(series, fallback):
+                if series is None:
+                    return fallback
+                val = float(series.iloc[i])
+                return fallback if val != val else val
+            ts = idx.to_pydatetime() if hasattr(idx, "to_pydatetime") else idx
+            candles.append({
+                "time": int(ts.timestamp()),
+                "open": at(o, close), "high": at(h, close),
+                "low": at(l, close), "close": close,
+                "volume": at(v, 0.0),
+            })
+
+        if not candles:
+            raise HTTPException(400, f"no usable bars for {ticker}")
+
+        closes = [b["close"] for b in candles]
+        first, last = closes[0], closes[-1]
         return {
-            "ticker": ticker, "interval": interval, "bars": bars[-400:],
-            "last": closes[-1] if closes else None,
-            "change": round(closes[-1] - closes[0], 4) if len(closes) > 1 else 0.0,
-            "change_pct": (round((closes[-1] / closes[0] - 1), 6)
-                           if len(closes) > 1 and closes[0] else 0.0),
-            "high": max(closes) if closes else None,
-            "low": min(closes) if closes else None,
+            "ticker": ticker,
+            "interval": interval,
+            "candles": candles,
+            "last": last,
+            "change": round(last - first, 4),
+            "change_pct": round(last / first - 1, 6) if first else 0.0,
+            "high": max(b["high"] for b in candles),
+            "low": min(b["low"] for b in candles),
         }
 
     @api.post("/orders")
@@ -777,14 +881,69 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             size=body.size, reference_price=price, timestamp=dt.datetime.now(),
             closing=body.closing,
         )
+        fill = getattr(result, "fill_price", price)
+
+        # A fill that leaves no record is invisible afterwards, which is why
+        # placing an order used to look like nothing happened.
+        from src.book import ManualBook
+        pos = ManualBook(state.home).open(
+            account_id=account_id, ticker=body.ticker, direction=body.direction,
+            size=body.size, price=fill,
+        )
         return {
+            "position_id": pos["id"],
             "account_id": account_id,
             "ticker": body.ticker,
             "direction": body.direction,
             "size": body.size,
-            "fill_price": getattr(result, "fill_price", price),
+            "fill_price": fill,
             "balance": provider.get_account_balance(account_id),
         }
+
+    @api.post("/positions/{position_id}/close")
+    def close_position(position_id: str, price: Optional[float] = None,
+                       data_provider: str = "yfinance"):
+        """Close a manual position at market, or at an explicit price."""
+        from src.book import ManualBook
+        book = ManualBook(state.home)
+        pos = book.get(position_id)
+        if not pos:
+            raise HTTPException(404, "unknown position")
+
+        if price is None:
+            from src.data_providers import make_data_provider
+            prov = make_data_provider(data_provider, state.home)
+            price, _ = prov.get_last_price(pos["ticker"])
+
+        provider = make_provider("simulated", state.home)
+        provider.execute_order(
+            account_id=pos["account_id"], ticker=pos["ticker"],
+            direction="short" if pos["direction"] == "long" else "long",
+            size=pos["size"], reference_price=price,
+            timestamp=dt.datetime.now(), closing=True,
+        )
+        closed = book.close(position_id, price)
+        provider.on_trade_closed(pos["account_id"], closed["pnl"])
+        return closed
+
+    @api.get("/positions/{position_id}")
+    def get_position(position_id: str, data_provider: str = "yfinance"):
+        """One position with its live mark, for inspection."""
+        from src.book import ManualBook
+        pos = ManualBook(state.home).get(position_id)
+        if not pos:
+            raise HTTPException(404, "unknown position")
+
+        mark = unrealised = None
+        try:
+            from src.data_providers import make_data_provider
+            prov = make_data_provider(data_provider, state.home)
+            mark, _ = prov.get_last_price(pos["ticker"])
+            sign = 1 if pos["direction"] == "long" else -1
+            unrealised = round(sign * (mark - pos["entry_price"]) * pos["size"], 2)
+        except Exception:
+            pass  # a quote failure should not hide the position itself
+        return {**pos, "mark": mark, "unrealised_pnl": unrealised}
 
     # ---- jobs ----
 
@@ -929,6 +1088,18 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
                         "account_id": r.get("account_id") or "",
                     }
                     (closed_rows if r.get("exit_time") else open_rows).append(entry)
+
+        # Manual positions live in their own book until closed.
+        from src.book import ManualBook
+        for m in ManualBook(state.home).list(account_id):
+            open_rows.append({
+                "run": "manual", "id": m["id"],
+                "ticker": m["ticker"], "direction": m["direction"],
+                "size": m["size"], "entry_time": m["entry_time"],
+                "entry_price": m["entry_price"], "exit_time": "", "exit_price": None,
+                "exit_reason": "", "pnl": None, "pnl_pct": "",
+                "account_id": m["account_id"],
+            })
 
         closed_rows.sort(key=lambda t: t["entry_time"], reverse=True)
         realised = sum(t["pnl"] or 0.0 for t in closed_rows)

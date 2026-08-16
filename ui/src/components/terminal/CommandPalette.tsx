@@ -43,7 +43,7 @@ export function CommandPalette({
     { id: "settings", label: "Settings", group: "Go to",
       run: () => { navigate("/settings"); onClose(); } },
     ...strategies.map((s) => ({
-      id: `strat:${s.name}`, label: s.name, hint: s.source, group: "Strategies",
+      id: `strat:${s.name}`, label: s.name, group: "Strategies",
       run: () => { navigate("/workspace"); onClose(); },
     })),
   ], [strategies, navigate, onClose]);

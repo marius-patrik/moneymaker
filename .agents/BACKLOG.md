@@ -262,3 +262,16 @@ a page rather than a modal.
 
 Trade records gained a `ticker` field — the log did not record what was
 traded, so every instrument column was empty.
+
+### Manual positions, TradingView charts, per-strategy metrics (DONE 2026-08-16)
+Placing an order adjusted the balance and left no record, so it genuinely
+looked like nothing happened. src/book.py persists open manual positions and
+appends closed ones to a session log, so they join the same history as
+strategy trades. Positions are inspectable (marked to market) and closeable.
+
+Charts are lightweight-charts (TradingView's own library): candles or line,
+5m–1wk, crosshair with OHLC readout, zoom and pan. /api/history returns OHLCV.
+
+Strategies list and header now show realised P&L, win rate, profit factor,
+trades and runs per system (GET /api/strategies/stats). Provenance badges
+removed — every strategy is the user's to edit, and any can be duplicated.

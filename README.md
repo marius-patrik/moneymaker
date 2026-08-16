@@ -340,7 +340,12 @@ GET  /api/stats                aggregate P&L, win rate, profit factor
 GET  /api/equity               cumulative P&L across every session
 POST /api/orders          {ticker, direction, size, account_id?}  — manual order
 GET  /api/quote/<ticker>       last price
-GET  /api/history/<ticker>     recent bars for the trading chart
+GET  /api/history/<ticker>     OHLCV candles for the chart
+GET  /api/positions            open positions + trade history (account-scoped)
+GET  /api/positions/<id>       one position, marked to market
+POST /api/positions/<id>/close close a manual position
+GET  /api/strategies/stats     per-strategy performance
+POST /api/strategies/<n>/duplicate  copy a strategy so it can be edited
 POST /api/strategies      {name, source?, overwrite?}  — create a strategy
 GET  /api/strategies/<name>/source     DELETE /api/strategies/<name>
 PUT  /api/config/home     {home}  — data directory, applied on restart

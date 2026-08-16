@@ -68,7 +68,7 @@ export function TickerSearch({
             else if (e.key === "Escape") setOpen(false);
           }}
           aria-label="Search instruments"
-          placeholder="Search instrument…"
+          placeholder="Search…"
           className="w-full bg-transparent font-mono text-xs outline-none placeholder:font-sans placeholder:text-muted-foreground"
         />
         {loading && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />}
