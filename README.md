@@ -2,7 +2,7 @@
 
 A provider-agnostic paper/live trading engine: pluggable strategies, a
 simulated execution provider with full account/credential parity to real
-brokers, a CLI, and a local HTTP+JSON API server.
+brokers, a CLI, a FastAPI server, and a React web UI.
 
 **Nothing in this repo places real-money trades by default.** The only
 working provider is `simulated`. Real-broker providers (Trading 212 demo,
@@ -76,7 +76,7 @@ src/                                Python package (import as `src.*`)
   multiwindow.py      multi-window backtest aggregation
   optimizer.py        grid-search optimizer with train/test split
   econ_calendar.py    economic release calendar (FRED, BLS stub, Simulated)
-  server.py           HTTP+JSON API (stdlib only, no extra deps)
+  server.py           FastAPI app — /api routes + serves ui/dist in production
   cli.py              argparse CLI entry point (command: `moneymaker`)
   agents/
     forker.py         fork_and_eval() + rolling_fork_eval() — compare N strategy variants
@@ -102,6 +102,17 @@ strategies/                         bundled strategies (loaded at runtime)
   vwap_reversion.py                 intraday VWAP mean-reversion with regime filter
   trend_momentum.py                 daily MA crossover (profitable on GC=F, gc_evolved params)
   example_momentum.py               example/template for custom strategies
+
+ui/                                 React + TypeScript web UI (Bun + RSBuild)
+  src/
+    main.tsx                        entry point
+    App.tsx                         routes + page transitions
+    lib/api.ts                      typed client for the /api surface
+    lib/utils.ts                    cn() + number/currency formatters
+    components/ui/                  shadcn/ui primitives
+    components/layout/Sidebar.tsx   nav
+    components/StrategyFlow.tsx     Dagre-laid-out pipeline diagram
+    pages/                          Dashboard, Strategies, Live, Sessions, Accounts
 
 tests/
   test_engine.py                    pytest suite, no network required
@@ -281,25 +292,62 @@ Run with `MultiBarSimulator.run_backtest({"ES=F": es_df, "NQ=F": nq_df})`.
 
 ## API server
 
+FastAPI. All endpoints live under `/api`; interactive docs are generated
+automatically at `/docs` (Swagger) and `/redoc`.
+
 ```
 moneymaker server --port 8787
 ```
 
 ```
-GET  /strategies
-GET  /providers
-GET  /accounts                POST /accounts  {name, provider?, currency?, starting_balance?, is_live?}
-GET  /accounts/<id>
-GET  /credentials             POST /credentials  {provider, key, env_var?|value?}
-POST /backtest        {strategy, ticker, start, end, interval?, provider?, account_id?, account?, risk_pct?}
-POST /live/start       {strategy, ticker, provider?, account_id?, account?, risk_pct?, end_time?, poll_seconds?}
-GET  /live/<id>/status         POST /live/<id>/stop
-GET  /live/list
-GET  /sessions                  GET /sessions/<filename>
+GET  /api/strategies
+GET  /api/providers
+GET  /api/accounts             POST /api/accounts  {name, provider?, currency?, starting_balance?, is_live?}
+GET  /api/accounts/<id>
+GET  /api/credentials          POST /api/credentials  {provider, key, env_var?|value?}
+POST /api/backtest        {strategy, ticker, start, end, interval?, provider?, account_id?, account?, risk_pct?, params?}
+POST /api/backtest-multi  {strategy, ticker, windows:[[start,end],...], interval?, provider?, account?, risk_pct?}
+POST /api/optimize        {strategy, ticker, param_grid, train_windows, test_windows?, ...}
+POST /api/live/start      {strategy, ticker, provider?, account_id?, account?, risk_pct?, end_time?, poll_seconds?}
+GET  /api/live/<id>/status     POST /api/live/<id>/stop
+GET  /api/live/list
+GET  /api/sessions             GET /api/sessions/<filename>
 ```
 
-Stdlib-only (no Flask/FastAPI). Live sessions run as background threads,
-so you can start one and poll `/status` from a web UI or TUI while it runs.
+Live sessions run as background threads, so you can start one and poll
+`/api/live/<id>/status` while it runs. Backtest and live-status responses
+flatten the trade metrics (`trade_count`, `total_pnl`, `win_rate`, `running`)
+to the top level, with the raw nested `summary` preserved alongside.
+
+When `ui/dist/` exists (after `bun run build`), the server also serves the
+web UI at `/`.
+
+## Web UI
+
+A React + TypeScript dashboard lives in `ui/`. Stack: Bun, RSBuild, Tailwind
+CSS, shadcn/ui, Motion (animation), Dagre + React Flow (strategy pipeline
+diagrams), Lucide (icons), Recharts (P&L charts).
+
+```
+cd ui
+bun install
+bun run dev      # dev server on :5173, proxies /api → :8787
+```
+
+Run the API server alongside it (`moneymaker server`) and open
+http://localhost:5173.
+
+For a single-origin production setup, build the UI and let FastAPI serve it:
+
+```
+cd ui && bun run build
+moneymaker server --port 8787     # UI now at http://localhost:8787
+```
+
+Pages: **Dashboard** (accounts, balances, live sessions), **Strategies**
+(expandable cards with a pipeline diagram and inline backtest runner),
+**Live** (start/stop/monitor sessions, polls every 3s), **Sessions** (trade
+tables with cumulative P&L charts), **Accounts** (create and list).
 
 ## Testing
 

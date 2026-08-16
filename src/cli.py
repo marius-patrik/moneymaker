@@ -614,7 +614,7 @@ def cmd_server(args):
 def main():
     parser = argparse.ArgumentParser(prog="moneymaker", description="Provider-agnostic paper/live trading engine.")
     parser.add_argument("--data-dir", default=None,
-                         help="Override data directory (default: $MONEYMAKER_HOME or ~/.moneymaker)")
+                         help="Override data directory (default: $MONEYMAKER_HOME or .data/ in the repo root)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_strat = sub.add_parser("strategies", help="List available strategies.")

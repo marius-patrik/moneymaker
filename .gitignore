@@ -13,6 +13,11 @@ uv.lock
 .data/*
 !.data/.gitkeep
 
+# Frontend build artifacts
+ui/node_modules/
+ui/dist/
+ui/.rsbuild/
+
 # Never commit real credentials
 credentials.json
 *.env
