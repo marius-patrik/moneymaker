@@ -24,6 +24,11 @@ export interface FieldProps
 export const Field = React.forwardRef<HTMLInputElement, FieldProps>(
   ({ label, value, onValueChange, mono, hint, className, labelClassName, ...props }, ref) => {
     const id = React.useId();
+    // An empty label renders a <label> that announces nothing — which passes
+    // a naive "is it labelled" check while failing the actual purpose.
+    if (process.env.NODE_ENV !== "production" && !label.trim()) {
+      console.warn("Field rendered with an empty label", props);
+    }
     const hintId = hint ? `${id}-hint` : undefined;
     return (
       <div className="space-y-1">

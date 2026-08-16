@@ -156,7 +156,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                   <Badge variant="outline" className="text-[10px]">via {config.home_source}</Badge>
                 )}
               </div>
-              <Field label="" value={homeInput} mono onValueChange={setHomeInput}
+              <Field label="Path" value={homeInput} mono onValueChange={setHomeInput}
                      placeholder={config?.default_home ?? "~/.moneymaker"} />
               <div className="flex flex-wrap items-center gap-2">
                 <Button size="sm" onClick={saveHome}
