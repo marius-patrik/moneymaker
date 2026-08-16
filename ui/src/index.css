@@ -62,24 +62,24 @@
 .react-flow__edge-path { stroke: hsl(var(--border)) !important; }
 .react-flow__edge-path.animated { animation: dashdraw 0.5s linear infinite; }
 
+@layer components {
 /* ---------------------------------------------------------------------
    Surface treatment
    Frosted panels for chrome that floats over content (sidebar, drawer,
    dialogs, menus). backdrop-filter needs a translucent background to have
    anything to blur, hence the /75 alpha rather than a solid token.
    --------------------------------------------------------------------- */
+/* @apply so Tailwind emits its own backdrop utilities — hand-written
+   backdrop-filter got minified down to the -webkit- prefix alone. */
 .glass {
-  background-color: hsl(var(--card) / 0.72);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  @apply bg-card/70 backdrop-blur-xl backdrop-saturate-150;
 }
 
 /* Menus and popovers must stay legible over arbitrary content, so they get
    a heavier base than the sidebar. */
 .glass-strong {
-  background-color: hsl(var(--popover) / 0.92);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  @apply bg-popover/90 backdrop-blur-2xl backdrop-saturate-150;
+}
 }
 
 /* Numeric columns line up when digits share a width. */
