@@ -23,9 +23,6 @@ class Bar:
 @dataclass
 class StrategyContext:
     """State a strategy can read/write as bars stream in. Reset per session."""
-    # NOTE: strategies that scan all of bars on every on_bar() call are O(N²)
-    # across a session. For 60-day 5m backtests (~4 800 bars) this is fine;
-    # if backtests slow down, add a max_bars cap here and prune old entries.
     bars: list[Bar] = field(default_factory=list)
     position_open: bool = False
     entry_price: Optional[float] = None
@@ -36,6 +33,10 @@ class StrategyContext:
     hard_exit_time: Optional[dt.datetime] = None
     trades_taken: int = 0
     extra: dict = field(default_factory=dict)
+    # If > 0, ctx.bars is capped to the most recent max_bars entries after
+    # each append. Strategies with absolute-time lookbacks (e.g. "5 min before
+    # 8:30") must set this large enough to cover their full lookback window.
+    max_bars: int = 0
 
 
 class Strategy(ABC):

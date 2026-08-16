@@ -39,6 +39,8 @@ class Simulator:
         self._last_bar_time = bar.time
         was_open = self.ctx.position_open
         self.ctx.bars.append(bar)
+        if self.ctx.max_bars > 0 and len(self.ctx.bars) > self.ctx.max_bars:
+            self.ctx.bars = self.ctx.bars[-self.ctx.max_bars:]
         self.strategy.on_bar(self.ctx, bar)
 
         if not was_open and self.ctx.position_open:
@@ -103,7 +105,10 @@ class Simulator:
         self.logger.write_csv()
         self.logger.print_summary()
 
-    def run_live(self, ticker: str, poll_seconds: int, end_time: dt.time) -> None:
+    def run_live(self, ticker: str, poll_seconds: int, end_time: dt.time,
+                 get_price_fn=None) -> None:
+        if get_price_fn is None:
+            get_price_fn = DataFeed.get_last_price
         print(f"Starting live-paper session on {ticker} via {self.provider.name}/{self.account_id}. "
               f"Polling every {poll_seconds}s. Will stop at {end_time} local time. Ctrl+C to stop early.")
         while not self.stopped.is_set():
@@ -112,7 +117,7 @@ class Simulator:
                 print("Reached end time, stopping session.")
                 break
             try:
-                price, ts = DataFeed.get_last_price(ticker)
+                price, ts = get_price_fn(ticker)
                 bar = Bar(time=ts, price=price)
                 self.feed_bar(bar, deduplicate=True)
             except Exception as e:

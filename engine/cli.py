@@ -14,6 +14,7 @@ import sys
 from engine.accounts import AccountManager, CredentialStore
 from engine.config import get_home
 from engine.data import DataFeed
+from engine.data_providers import DATA_PROVIDERS, make_data_provider
 from engine.engine import Simulator
 from engine.logger import TradeLogger
 from engine.multiwindow import run_multi_window_backtest
@@ -169,6 +170,15 @@ def _resolve_account(home: str, provider, args) -> str:
     return accts[0].account_id
 
 
+def _make_data_provider(args, home: str):
+    dp_name = getattr(args, "data_provider", None) or "yfinance"
+    dp_path = getattr(args, "data_provider_path", None)
+    kwargs = {}
+    if dp_path:
+        kwargs["path"] = dp_path
+    return make_data_provider(dp_name, home, **kwargs)
+
+
 def cmd_backtest(args):
     home = get_home(args.data_dir)
     strategies = load_strategies(home)
@@ -177,8 +187,8 @@ def cmd_backtest(args):
         print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
         sys.exit(1)
     overrides = _parse_param_overrides(getattr(args, "param", None) or [], strategy_cls)
-    feed = DataFeed(home)
-    df = feed.get_historical(args.ticker, args.start, args.end, interval=args.interval)
+    data_prov = _make_data_provider(args, home)
+    df = data_prov.get_historical(args.ticker, args.start, args.end, interval=args.interval)
     strategy = strategy_cls.from_params({**strategy_cls.params(), **overrides}) if overrides else strategy_cls()
     provider = make_provider(args.provider, home)
     account_id = _resolve_account(home, provider, args)
@@ -198,6 +208,11 @@ def cmd_live(args):
         sys.exit(1)
     overrides = _parse_param_overrides(getattr(args, "param", None) or [], strategy_cls)
     strategy = strategy_cls.from_params({**strategy_cls.params(), **overrides}) if overrides else strategy_cls()
+    data_prov = _make_data_provider(args, home)
+    if not data_prov.is_live:
+        print(f"Data provider '{data_prov.name}' does not support live price feeds. "
+              f"Use --data-provider yfinance or alpaca for live mode.", file=sys.stderr)
+        sys.exit(1)
     provider = make_provider(args.provider, home)
     account_id = _resolve_account(home, provider, args)
     risk = RiskManager(risk_pct=args.risk_pct)
@@ -205,7 +220,8 @@ def cmd_live(args):
     logger = TradeLogger(home, f"live_{args.strategy}_{ts}")
     sim = Simulator(strategy, provider, account_id, risk, logger, ticker=args.ticker)
     end_time = dt.datetime.strptime(args.end_time, "%H:%M").time()
-    sim.run_live(args.ticker, args.poll_seconds, end_time)
+    sim.run_live(args.ticker, args.poll_seconds, end_time,
+                 get_price_fn=data_prov.get_last_price)
 
 
 def cmd_log(args):
@@ -301,10 +317,12 @@ def cmd_backtest_multi(args):
         base = strategy_cls.params()
         return strategy_cls.from_params({**base, **overrides}) if overrides else strategy_cls()
 
+    data_prov = _make_data_provider(args, home)
     result = run_multi_window_backtest(
         strategy_factory=factory, provider_name=args.provider, home=home,
         ticker=args.ticker, windows=windows, interval=args.interval,
         account_balance=args.account, risk_pct=args.risk_pct,
+        get_data_fn=data_prov.get_historical,
     )
     print(f"\n{'Window':<28} {'Trades':>7} {'Win%':>7} {'P&L':>12}")
     print("-" * 58)
@@ -392,27 +410,13 @@ def cmd_optimize(args):
 # fork-eval / evolve
 # --------------------------------------------------------------------------
 
-def cmd_fork_eval(args):
-    from engine.agents.forker import fork_and_eval
-    home = get_home(args.data_dir)
-    strategies = load_strategies(home)
-    strategy_cls = strategies.get(args.strategy)
-    if not strategy_cls:
-        print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
-        sys.exit(1)
-    try:
-        windows = _parse_windows(args.windows)
-    except ValueError as e:
-        print(str(e), file=sys.stderr)
-        sys.exit(1)
-
+def _resolve_forks(strategy_cls, strategies: dict) -> list:
+    """Resolve FORKS string names to (label, cls, params) triples."""
     raw_forks = strategy_cls.FORKS
     if not raw_forks:
-        print(f"Strategy '{args.strategy}' declares no FORKS. "
+        print(f"Strategy '{strategy_cls.name}' declares no FORKS. "
               f"Add a FORKS class variable to define variants to compare.", file=sys.stderr)
         sys.exit(1)
-
-    # Resolve strategy name strings to classes
     forks = []
     for label, strat_name, params in raw_forks:
         cls = strategies.get(strat_name)
@@ -421,6 +425,59 @@ def cmd_fork_eval(args):
                   f"Available: {list(strategies)}", file=sys.stderr)
             sys.exit(1)
         forks.append((label, cls, params))
+    return forks
+
+
+def cmd_fork_eval(args):
+    from engine.agents.forker import fork_and_eval, rolling_fork_eval
+    home = get_home(args.data_dir)
+    strategies = load_strategies(home)
+    strategy_cls = strategies.get(args.strategy)
+    if not strategy_cls:
+        print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
+        sys.exit(1)
+    forks = _resolve_forks(strategy_cls, strategies)
+
+    if getattr(args, "rolling", False):
+        if not args.rolling_start or not args.rolling_end:
+            print("--rolling requires --rolling-start and --rolling-end", file=sys.stderr)
+            sys.exit(1)
+        window_days = getattr(args, "rolling_window", 30)
+        step_days = getattr(args, "rolling_step", 7)
+        print(f"Rolling fork-eval: {len(forks)} variant(s) of '{args.strategy}' on {args.ticker}")
+        print(f"  Range: {args.rolling_start} → {args.rolling_end}  "
+              f"window={window_days}d  step={step_days}d")
+        result = rolling_fork_eval(
+            strategy_name=args.strategy, forks=forks,
+            provider_name=args.provider, home=home, ticker=args.ticker,
+            rolling_start=args.rolling_start, rolling_end=args.rolling_end,
+            window_days=window_days, step_days=step_days,
+            interval=args.interval, account_balance=args.account, risk_pct=args.risk_pct,
+        )
+        print(f"\nScore trajectory ({len(result.entries)} windows):")
+        fork_names = result.fork_names()
+        header = f"{'Window end':<14}" + "".join(f"{n[:18]:>20}" for n in fork_names)
+        print(header)
+        print("-" * len(header))
+        for entry in result.entries:
+            scores = {f["name"]: f["score"] for f in entry.forks}
+            row = f"{entry.window_end:<14}" + "".join(
+                f"{scores.get(n, float('nan')):>+20.2f}" for n in fork_names
+            )
+            print(row)
+        print()
+        for name in fork_names:
+            print(f"  {name}: {result.trend(name)}")
+        return
+
+    if not args.windows:
+        print("Provide --windows for one-shot mode or --rolling for rolling mode.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        windows = _parse_windows(args.windows)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
 
     print(f"Fork-eval: {len(forks)} variant(s) of '{args.strategy}' "
           f"across {len(windows)} window(s)...")
@@ -445,6 +502,37 @@ def cmd_fork_eval(args):
     with open(out_path, "w") as f:
         json.dump(result.to_dict(), f, indent=2, default=str)
     print(f"Full results written to {out_path}")
+
+
+def cmd_rankings(args):
+    from engine.agents.forker import load_all_rolling
+    home = get_home(args.data_dir)
+    all_results = load_all_rolling(home)
+    if not all_results:
+        print("No rolling evaluation files found. Run `fork-eval --rolling ...` first.")
+        return
+    for r in all_results:
+        if not r.entries:
+            continue
+        print(f"\n{'='*60}")
+        print(f"  {r.strategy}  [{r.ticker}]  —  {len(r.entries)} window(s)")
+        print(f"{'='*60}")
+        fork_names = r.fork_names()
+        header = f"{'Window end':<14}" + "".join(f"{n[:16]:>18}" for n in fork_names)
+        print(header)
+        print("-" * len(header))
+        for entry in r.entries:
+            scores = {f["name"]: f["score"] for f in entry.forks}
+            row = f"{entry.window_end:<14}" + "".join(
+                f"{scores.get(n, float('nan')):>+18.2f}" for n in fork_names
+            )
+            print(row)
+        print()
+        for name in fork_names:
+            trend = r.trend(name)
+            traj = r.score_trajectory(name)
+            latest = f"{traj[-1][1]:+.2f}" if traj else "n/a"
+            print(f"  {name:<38}  latest={latest:>8}  trend={trend}")
 
 
 def cmd_evolve(args):
@@ -587,6 +675,10 @@ def main():
     p_back.add_argument("--account-id", default=None, help="Use a specific existing account instead of auto-selecting")
     p_back.add_argument("--risk-pct", type=float, default=0.01)
     p_back.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_back.add_argument("--data-provider", default="yfinance", metavar="NAME",
+                        help=f"Market data source: {list(DATA_PROVIDERS)}")
+    p_back.add_argument("--data-provider-path", default=None, metavar="PATH",
+                        help="For --data-provider csv: path to a CSV or Parquet file.")
     p_back.add_argument("--param", action="append", metavar="KEY=VALUE",
                         help="Override a strategy parameter, e.g. --param min_spike_pct=0.001. Repeatable.")
     p_back.set_defaults(func=cmd_backtest)
@@ -600,6 +692,10 @@ def main():
     p_live.add_argument("--poll-seconds", type=int, default=30)
     p_live.add_argument("--end-time", default="11:00", help="HH:MM local time to stop the session")
     p_live.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_live.add_argument("--data-provider", default="yfinance", metavar="NAME",
+                        help=f"Live price source: {[k for k, v in DATA_PROVIDERS.items() if v.is_live]}")
+    p_live.add_argument("--data-provider-path", default=None, metavar="PATH",
+                        help="For --data-provider csv (not applicable to live mode).")
     p_live.add_argument("--param", action="append", metavar="KEY=VALUE",
                         help="Override a strategy parameter, e.g. --param stop_pct=0.003. Repeatable.")
     p_live.set_defaults(func=cmd_live)
@@ -624,6 +720,10 @@ def main():
     p_mw.add_argument("--account", type=float, default=10000.0)
     p_mw.add_argument("--risk-pct", type=float, default=0.01)
     p_mw.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_mw.add_argument("--data-provider", default="yfinance", metavar="NAME",
+                      help=f"Market data source: {list(DATA_PROVIDERS)}")
+    p_mw.add_argument("--data-provider-path", default=None, metavar="PATH",
+                      help="For --data-provider csv: path to data file.")
     p_mw.add_argument("--param", action="append", metavar="KEY=VALUE",
                       help="Override a strategy parameter. Repeatable.")
     p_mw.set_defaults(func=cmd_backtest_multi)
@@ -650,13 +750,27 @@ def main():
                           help="Compare strategy FORKS over identical windows and rank by objective score.")
     p_fe.add_argument("--strategy", required=True)
     p_fe.add_argument("--ticker", required=True)
-    p_fe.add_argument("--windows", required=True,
-                      help="Comma-separated START:END pairs (same format as backtest-multi)")
+    p_fe.add_argument("--windows", default=None,
+                      help="Comma-separated START:END pairs (one-shot mode). Omit for --rolling mode.")
+    p_fe.add_argument("--rolling", action="store_true",
+                      help="Slide a window forward and accumulate score trajectories (P011).")
+    p_fe.add_argument("--rolling-start", default=None, metavar="DATE",
+                      help="Start of the rolling range (YYYY-MM-DD). Required with --rolling.")
+    p_fe.add_argument("--rolling-end", default=None, metavar="DATE",
+                      help="End of the rolling range (YYYY-MM-DD). Required with --rolling.")
+    p_fe.add_argument("--rolling-window", type=int, default=30, metavar="DAYS",
+                      help="Size of each evaluation window in days (default 30).")
+    p_fe.add_argument("--rolling-step", type=int, default=7, metavar="DAYS",
+                      help="Step size between windows in days (default 7).")
     p_fe.add_argument("--interval", default="5m")
     p_fe.add_argument("--account", type=float, default=10000.0)
     p_fe.add_argument("--risk-pct", type=float, default=0.01)
     p_fe.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
     p_fe.set_defaults(func=cmd_fork_eval)
+
+    p_rank = sub.add_parser("rankings",
+                             help="Show score trajectories for all rolling fork-eval results (P011).")
+    p_rank.set_defaults(func=cmd_rankings)
 
     p_ev = sub.add_parser("evolve",
                           help="Hill-climb a strategy's numeric parameters across windows to find a better configuration.")

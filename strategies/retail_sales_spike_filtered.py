@@ -76,6 +76,7 @@ class FilteredDataReleaseStrategy(Strategy):
         hard_exit_time: dt.time = dt.time(11, 0),
         min_spike_pct: float = 0.0,
         min_surprise_ratio: float = 0.0,
+        max_pre_range_pct: float = 0.0,
     ):
         self.release_time = release_time
         self.baseline_minutes = baseline_minutes
@@ -88,6 +89,7 @@ class FilteredDataReleaseStrategy(Strategy):
         self.hard_exit_time = hard_exit_time
         self.min_spike_pct = min_spike_pct
         self.min_surprise_ratio = min_surprise_ratio
+        self.max_pre_range_pct = max_pre_range_pct
 
     def _release_dt(self, bar_time: dt.datetime) -> dt.datetime:
         return dt.datetime.combine(bar_time.date(), self.release_time, tzinfo=bar_time.tzinfo)
@@ -146,16 +148,23 @@ class FilteredDataReleaseStrategy(Strategy):
                     spike_move_pct >= self.min_spike_pct
                     and (self.min_surprise_ratio == 0.0 or
                          spike_move_pct >= self.min_surprise_ratio * max(pre_noise_pct, 1e-9))
+                    and (self.max_pre_range_pct == 0.0 or pre_noise_pct <= self.max_pre_range_pct)
                 )
                 ctx.extra.update({
                     "signal_evaluated": True,
                     "signal_valid": valid,
                     "spike_move_pct": spike_move_pct,
+                    "pre_range_pct": pre_noise_pct,
                 })
                 if not valid:
-                    ctx.extra["stand_down_reason"] = (
-                        f"spike={spike_move_pct:.4%} < floor={self.min_spike_pct:.4%} — standing down"
-                    )
+                    if self.max_pre_range_pct > 0 and pre_noise_pct > self.max_pre_range_pct:
+                        ctx.extra["stand_down_reason"] = (
+                            f"pre_range={pre_noise_pct:.4%} > max={self.max_pre_range_pct:.4%} — noisy session, standing down"
+                        )
+                    else:
+                        ctx.extra["stand_down_reason"] = (
+                            f"spike={spike_move_pct:.4%} < floor={self.min_spike_pct:.4%} — standing down"
+                        )
 
         if not ctx.extra.get("signal_valid", False):
             return
