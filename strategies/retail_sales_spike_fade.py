@@ -48,19 +48,24 @@ class FadeDataReleaseStrategy(Strategy):
     max_trades_per_session = 1
 
     FORKS = [
-        ("fade", "retail_sales_spike_fade", {
-            "min_spike_pct": 0.001,
-            "base_bars": 3,
-            "base_tolerance_pct": 0.0010,
-            "stop_buffer": 0.0005,
-            "target_rr": 0.0,  # 0 = use baseline as target
+        ("fade_base", "retail_sales_spike_fade", {
+            "min_spike_pct": 0.001, "base_bars": 3, "base_tolerance_pct": 0.0010,
+            "stop_buffer": 0.0005, "target_rr": 0.0,
+            "min_retracement_pct": 0.0, "max_stop_dist_pct": 0.005,
+        }),
+        ("fade_retracement30", "retail_sales_spike_fade", {
+            "min_spike_pct": 0.001, "base_bars": 3, "base_tolerance_pct": 0.0010,
+            "stop_buffer": 0.0005, "target_rr": 0.0,
+            "min_retracement_pct": 0.30, "max_stop_dist_pct": 0.005,
+        }),
+        ("fade_tight_stop", "retail_sales_spike_fade", {
+            "min_spike_pct": 0.001, "base_bars": 3, "base_tolerance_pct": 0.0010,
+            "stop_buffer": 0.0005, "target_rr": 0.0,
+            "min_retracement_pct": 0.0, "max_stop_dist_pct": 0.003,
         }),
         ("continuation", "retail_sales_spike_filtered", {
-            "min_spike_pct": 0.001,
-            "base_bars": 3,
-            "base_tolerance_pct": 0.0010,
-            "stop_buffer": 0.0005,
-            "target_rr": 2.0,
+            "min_spike_pct": 0.001, "base_bars": 3, "base_tolerance_pct": 0.0010,
+            "stop_buffer": 0.0005, "target_rr": 2.0,
         }),
     ]
 
@@ -76,6 +81,8 @@ class FadeDataReleaseStrategy(Strategy):
         hard_exit_time: dt.time = dt.time(11, 0),
         min_spike_pct: float = 0.001,
         min_surprise_ratio: float = 0.0,
+        min_retracement_pct: float = 0.0,
+        max_stop_dist_pct: float = 0.005,
     ):
         self.release_time = release_time
         self.baseline_minutes = baseline_minutes
@@ -87,6 +94,8 @@ class FadeDataReleaseStrategy(Strategy):
         self.hard_exit_time = hard_exit_time
         self.min_spike_pct = min_spike_pct
         self.min_surprise_ratio = min_surprise_ratio
+        self.min_retracement_pct = min_retracement_pct
+        self.max_stop_dist_pct = max_stop_dist_pct
 
     def _release_dt(self, bar_time: dt.datetime) -> dt.datetime:
         return dt.datetime.combine(bar_time.date(), self.release_time, tzinfo=bar_time.tzinfo)
@@ -174,10 +183,20 @@ class FadeDataReleaseStrategy(Strategy):
         basing_high = max(basing_prices)
         basing_low = min(basing_prices)
 
-        # Direction of original spike
+        # Direction of original spike and retracement measurement
         spike_prices_all = [b.price for b in ctx.bars if release_dt <= b.time < spike_end]
         avg_spike = sum(spike_prices_all) / len(spike_prices_all) if spike_prices_all else baseline
         spike_dir = "long" if avg_spike > baseline else "short"
+        spike_move = abs(avg_spike - baseline)
+
+        # Require basing to have retraced at least min_retracement_pct of the spike.
+        # Basing at the spike peak (retracement≈0) → continuation more likely than fade.
+        if self.min_retracement_pct > 0 and spike_move > 0:
+            basing_avg = sum(basing_prices) / len(basing_prices)
+            basing_move = abs(basing_avg - baseline)
+            retracement = 1.0 - (basing_move / spike_move)
+            if retracement < self.min_retracement_pct:
+                return
 
         # --- Fade entry: break AGAINST spike direction ---
         if spike_dir == "long" and bar.price < basing_low:
@@ -196,6 +215,11 @@ class FadeDataReleaseStrategy(Strategy):
         else:
             ctx.stop_price = basing_low * (1 - self.stop_buffer)
             stop_dist = entry - ctx.stop_price
+
+        # Skip if stop distance is unusually large — likely a gapping or
+        # high-volatility session where the entry/stop math is unreliable.
+        if self.max_stop_dist_pct > 0 and stop_dist / baseline > self.max_stop_dist_pct:
+            return
 
         # Target: baseline (expected reversion level)
         # If target_rr > 0, use RR multiple instead; target_rr=0 means use baseline

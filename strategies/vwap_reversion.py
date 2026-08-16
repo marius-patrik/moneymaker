@@ -1,42 +1,29 @@
 """
 Intraday VWAP mean-reversion.
 
-STUB — structure only, on_bar not yet implemented.
-
 Premise:
   VWAP (volume-weighted average price) acts as a daily fair-value anchor for
   institutional order flow. Price deviations of N% from VWAP tend to revert
   during low-volatility sessions. Short above VWAP + buffer; long below.
 
-Approach:
+Flow:
   1. Track cumulative VWAP from the session open (9:30 ET).
      VWAP = Σ(price × volume) / Σ(volume), updated bar-by-bar.
-     Note: yfinance 5m bars include volume — this is implementable.
   2. Enter long when price is > deviation_pct below VWAP.
      Enter short when price is > deviation_pct above VWAP.
-  3. Stop: further deviation (e.g., 2× the entry deviation from VWAP).
+  3. Stop: stop_multiple × entry_deviation from VWAP, on the far side.
   4. Target: return to VWAP.
-  5. Do not enter after 13:00 (low-liquidity afternoon drift).
+  5. Hard exit at max_entry_time regardless.
 
 Why it might work:
-  Institutional algorithmic systems use VWAP as a benchmark. Large sellers push
-  price below VWAP, then revert as they finish. Reversion is most reliable in
-  the morning session with good volume.
+  Institutional algos use VWAP as a benchmark. Large sellers push price below
+  VWAP; reversion fires as they finish. Most reliable in morning with volume.
 
 Why it might not:
-  On trend days, price can stay far from VWAP for hours without reverting.
-  Works best in range-bound/choppy conditions — the opposite of a momentum day.
-  Needs a volatility filter or trend-regime classifier to avoid trending days.
+  On trend days, price stays far from VWAP for hours. This strategy is
+  specifically a choppy/range-bound-day play.
 
-Known implementation requirement:
-  Needs the Volume column from yfinance. The engine currently only passes Close
-  to bars. Engine or Bar class may need to be extended to carry volume.
-
-Parameters to explore:
-  deviation_pct: 0.1%, 0.2%, 0.3%
-  stop_multiple: 1.5, 2.0 (× entry deviation)
-  max_entry_time: 13:00 or 14:00
-  min_volume_ratio: require current bar volume > N× session average
+FORKS compare deviation thresholds and stop multiples.
 """
 
 from __future__ import annotations
@@ -47,9 +34,20 @@ from engine.strategy import Bar, Strategy, StrategyContext, reset_session_if_new
 
 
 class VwapReversionStrategy(Strategy):
-    """Intraday VWAP mean-reversion — stub, not yet implemented."""
+    """
+    Intraday VWAP mean-reversion: enter when price deviates from VWAP,
+    stop on further deviation, target at VWAP.
+    """
 
     name = "vwap_reversion"
+    max_trades_per_session = 2
+
+    FORKS = [
+        ("vwap_tight",    "vwap_reversion", {"deviation_pct": 0.001, "stop_multiple": 2.0}),
+        ("vwap_standard", "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 2.0}),
+        ("vwap_wide",     "vwap_reversion", {"deviation_pct": 0.003, "stop_multiple": 1.5}),
+        ("vwap_loose",    "vwap_reversion", {"deviation_pct": 0.002, "stop_multiple": 1.5}),
+    ]
 
     def __init__(
         self,
@@ -57,14 +55,93 @@ class VwapReversionStrategy(Strategy):
         deviation_pct: float = 0.002,
         stop_multiple: float = 2.0,
         max_entry_time: dt.time = dt.time(13, 0),
+        hard_exit_time: dt.time = dt.time(15, 45),
+        min_volume: float = 0.0,
     ):
         self.open_time = open_time
         self.deviation_pct = deviation_pct
         self.stop_multiple = stop_multiple
         self.max_entry_time = max_entry_time
+        self.hard_exit_time = hard_exit_time
+        self.min_volume = min_volume
+
+    def _open_dt(self, bar_time: dt.datetime) -> dt.datetime:
+        return dt.datetime.combine(bar_time.date(), self.open_time, tzinfo=bar_time.tzinfo)
+
+    def _vwap(self, ctx: StrategyContext, bar: Bar, open_dt: dt.datetime) -> float | None:
+        """Compute cumulative VWAP from session open through current bar."""
+        session_bars = [b for b in ctx.bars if b.time >= open_dt]
+        sum_pv = sum(b.price * b.volume for b in session_bars)
+        sum_v = sum(b.volume for b in session_bars)
+        if sum_v == 0:
+            return None
+        return sum_pv / sum_v
 
     def on_bar(self, ctx: StrategyContext, bar: Bar) -> None:
-        raise NotImplementedError(
-            "vwap_reversion is a stub. Implement on_bar before backtesting. "
-            "Note: requires volume data — engine Bar class needs extending."
+        reset_session_if_new_day(ctx, bar)
+
+        open_dt = self._open_dt(bar.time)
+        if ctx.hard_exit_time is None:
+            ctx.hard_exit_time = dt.datetime.combine(
+                bar.time.date(), self.hard_exit_time, tzinfo=bar.time.tzinfo
+            )
+        max_entry_dt = dt.datetime.combine(
+            bar.time.date(), self.max_entry_time, tzinfo=bar.time.tzinfo
         )
+
+        if ctx.position_open:
+            hit_stop = (
+                (ctx.direction == "long" and bar.price <= ctx.stop_price)
+                or (ctx.direction == "short" and bar.price >= ctx.stop_price)
+            )
+            hit_target = (
+                (ctx.direction == "long" and bar.price >= ctx.target_price)
+                or (ctx.direction == "short" and bar.price <= ctx.target_price)
+            )
+            timed_out = bar.time >= ctx.hard_exit_time
+            if hit_stop or hit_target or timed_out:
+                ctx.extra["close_reason"] = "stop" if hit_stop else "target" if hit_target else "time_box"
+                ctx.extra["close_now"] = True
+            return
+
+        if ctx.trades_taken >= self.max_trades_per_session:
+            return
+        if bar.time < open_dt or bar.time >= max_entry_dt:
+            return
+        if self.min_volume > 0 and bar.volume < self.min_volume:
+            return
+
+        vwap = self._vwap(ctx, bar, open_dt)
+        if vwap is None:
+            return
+
+        deviation = (bar.price - vwap) / vwap
+
+        if deviation < -self.deviation_pct:
+            direction = "long"
+        elif deviation > self.deviation_pct:
+            direction = "short"
+        else:
+            return
+
+        entry = bar.price
+        entry_deviation = abs(bar.price - vwap)
+        stop_dist = entry_deviation * self.stop_multiple
+
+        if direction == "long":
+            ctx.stop_price = entry - stop_dist
+            ctx.target_price = vwap
+        else:
+            ctx.stop_price = entry + stop_dist
+            ctx.target_price = vwap
+
+        ctx.position_open = True
+        ctx.entry_price = entry
+        ctx.entry_time = bar.time
+        ctx.direction = direction
+        ctx.trades_taken += 1
+        ctx.extra["entry_reason"] = (
+            f"VWAP reversion {direction}: price={entry:.2f} vwap={vwap:.2f} "
+            f"deviation={deviation:+.3%}"
+        )
+        ctx.extra["vwap_at_entry"] = vwap

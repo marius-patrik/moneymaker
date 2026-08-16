@@ -258,14 +258,19 @@ def cmd_backtest_multi(args):
     if not strategy_cls:
         print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
         sys.exit(1)
+    overrides = _parse_param_overrides(getattr(args, "param", None) or [], strategy_cls)
     try:
         windows = _parse_windows(args.windows)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
 
+    def factory():
+        base = strategy_cls.params()
+        return strategy_cls.from_params({**base, **overrides}) if overrides else strategy_cls()
+
     result = run_multi_window_backtest(
-        strategy_factory=strategy_cls, provider_name=args.provider, home=home,
+        strategy_factory=factory, provider_name=args.provider, home=home,
         ticker=args.ticker, windows=windows, interval=args.interval,
         account_balance=args.account, risk_pct=args.risk_pct,
     )
@@ -581,6 +586,8 @@ def main():
     p_mw.add_argument("--account", type=float, default=10000.0)
     p_mw.add_argument("--risk-pct", type=float, default=0.01)
     p_mw.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_mw.add_argument("--param", action="append", metavar="KEY=VALUE",
+                      help="Override a strategy parameter. Repeatable.")
     p_mw.set_defaults(func=cmd_backtest_multi)
 
     # optimize ("training")

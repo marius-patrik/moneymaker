@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import sys
+import time
 
 import pandas as pd
 
@@ -30,13 +31,19 @@ class DataFeed:
         return os.path.join(self.cache_dir, fname)
 
     def get_historical(self, ticker: str, start: str, end: str, interval: str = "5m",
-                        use_cache: bool = True) -> pd.DataFrame:
+                        use_cache: bool = True, cache_ttl_seconds: int = 3600) -> pd.DataFrame:
         cache_path = self._cache_path(ticker, start, end, interval)
         if use_cache and os.path.exists(cache_path):
             try:
-                return pd.read_parquet(cache_path)
+                # Re-fetch if end date is today or in the future and cache is stale.
+                today = dt.date.today()
+                end_date = dt.date.fromisoformat(end)
+                cache_age = time.time() - os.path.getmtime(cache_path)
+                cache_fresh = end_date < today or cache_age < cache_ttl_seconds
+                if cache_fresh:
+                    return pd.read_parquet(cache_path)
             except Exception:
-                pass  # cache corrupt, fall through and re-fetch
+                pass  # cache corrupt or clock issue, fall through and re-fetch
 
         df = yf.download(ticker, start=start, end=end, interval=interval, progress=False)
         if df.empty:

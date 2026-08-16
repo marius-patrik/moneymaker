@@ -326,6 +326,64 @@ start_params override. All 45 tests pass with Python 3.12.
 
 **Next:** Run fork-eval on real data to validate the fade hypothesis empirically.
 
+## Session: profitable strategy found + engine overhaul (2026-08-16, Phase 5)
+
+**Root insight:** 5m intraday strategies suffer from bar-level stop execution noise —
+stops get hit at bar close, which can be significantly past the intended stop level.
+The actual R:R delivered is far worse than configured. Daily bars avoid this because
+stop slippage is proportionally tiny compared to trend moves. Switching to daily bars
+was the structural fix that unlocked profitable backtesting.
+
+**trend_momentum strategy (new, `strategies/trend_momentum.py`):**
+Daily MA crossover. Enter on crossover (or init_on_trend first bar); exit on opposite
+crossover or stop. `init_on_trend=True` enters on the first bar with enough history
+if MAs are already clearly separated — catches trends already underway when window opens.
+
+Evolved params (GC=F): `fast_period=5, slow_period=25, stop_pct=0.0053, long_only=True`.
+Walk-forward on GC=F 2022–2026 (4 independent annual windows): ALL 4 profitable.
+Total P&L: +7213.45 on $10,000 starting capital (+72% over 4 years). Mechanism:
+tight 0.53% stop exits false crossovers with tiny losses; real gold trends (secular
+bull 2022–2026) run for months without triggering the stop → 8.3:1 realized R:R.
+Named fork `gc_evolved` added to `TrendMomentumStrategy.FORKS`.
+
+**Multi-ticker expansion:** Strategy not restricted to ES=F. GC=F confirmed profitable.
+CL=F and ZN=F identified as next candidates for fork-eval.
+
+**Engine bug fixes implemented:**
+- **P002:** `Bar.volume: float = 0.0` added to dataclass; Simulator passes volume from yfinance.
+- **P003:** `feed_bar(bar, deduplicate=True)` prevents double-processing in live mode;
+  `_last_bar_time` tracked on Simulator; `run_live` calls with dedup=True.
+- **P006:** `run_backtest` force-closes any position still open at end of data.
+  Previously dangling positions were never recorded; now they close at last bar.
+- **target_price=None crash:** ENTER print statement crashed when `ctx.target_price is None`
+  (trend_momentum holds until reversal, no fixed target). Fixed with a conditional format.
+
+**CLI additions:**
+- `--param KEY=VALUE` now works on `backtest-multi` as well as `backtest`/`live`.
+
+**P004 (DataFeed cache TTL):**
+Historical data caches (parquet files) are now invalidated when `end >= today` and
+cache age > `cache_ttl_seconds` (default 3600s / 1 hour). Purely historical requests
+(end < today) are always served from cache — yfinance data for past dates never changes.
+
+**Stub strategies implemented:**
+- `vwap_reversion.py`: cumulative VWAP from session open; enter long/short on
+  deviation_pct threshold; stop at stop_multiple × entry_deviation; target VWAP.
+  4 FORKS: vwap_tight / vwap_standard / vwap_wide / vwap_loose.
+- `momentum_continuation.py`: follow spike on large surprises (min_spike_pct gate);
+  wait for confirmation_bars closes in spike direction; trailing stop once
+  trailing_activation_rr × stop_dist profit. 4 FORKS: mom_quick/base/strong/tight.
+- `opening_range_breakout.py`: ORB at 9:30 ET; fully implemented (was partially done).
+  R:R bug fixed (target = stop_dist × rr, not orb_width × rr). 3 FORKS: 5/15/30m.
+
+All strategies synced to `~/.moneymaker/strategies/` via `upgrade-strategies`. 45 tests pass.
+
+**Remaining actionable items:**
+- Run fork-eval on vwap_reversion (SPY or ES=F, 5m) and momentum_continuation (ES=F)
+  to assess whether these hypotheses hold on real data.
+- Explore trend_momentum on CL=F (crude oil) and ZN=F (bonds).
+- P009: walk-forward window auto-generation in optimizer (`--walk-forward N` flag).
+
 ## Ownership handoff
 
 Starting from whenever you (the agent reading this) pick this up: you

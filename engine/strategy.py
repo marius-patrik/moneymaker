@@ -17,6 +17,7 @@ from typing import Any, Optional
 class Bar:
     time: dt.datetime
     price: float
+    volume: float = 0.0
 
 
 @dataclass

@@ -30,9 +30,13 @@ class Simulator:
         self.ticker = ticker
         self.ctx = StrategyContext()
         self._open_trade: Optional[Trade] = None
+        self._last_bar_time: Optional[dt.datetime] = None
         self.stopped = threading.Event()
 
-    def feed_bar(self, bar: Bar) -> None:
+    def feed_bar(self, bar: Bar, deduplicate: bool = False) -> None:
+        if deduplicate and self._last_bar_time is not None and bar.time <= self._last_bar_time:
+            return
+        self._last_bar_time = bar.time
         was_open = self.ctx.position_open
         self.ctx.bars.append(bar)
         self.strategy.on_bar(self.ctx, bar)
@@ -52,8 +56,9 @@ class Simulator:
                 size=size,
                 account_id=self.account_id,
             )
+            target_str = f"{self.ctx.target_price:.2f}" if self.ctx.target_price is not None else "none"
             print(f"[{bar.time}] ENTER {self.ctx.direction.upper()} @ {result.fill_price:.2f} "
-                  f"size={size:.4f} stop={self.ctx.stop_price:.2f} target={self.ctx.target_price:.2f} "
+                  f"size={size:.4f} stop={self.ctx.stop_price:.2f} target={target_str} "
                   f"via={self.provider.name}/{self.account_id} ({self.ctx.extra.get('entry_reason', '')})")
 
         if self.ctx.extra.get("close_now"):
@@ -72,9 +77,29 @@ class Simulator:
             self.ctx.extra["close_now"] = False
 
     def run_backtest(self, df: pd.DataFrame) -> None:
+        last_bar = None
         for ts, row in df.iterrows():
-            bar = Bar(time=ts.to_pydatetime(), price=float(row["Close"]))
+            bar = Bar(
+                time=ts.to_pydatetime(),
+                price=float(row["Close"]),
+                volume=float(row["Volume"]) if "Volume" in row.index else 0.0,
+            )
             self.feed_bar(bar)
+            last_bar = bar
+        # Force-close any position still open at end of data (P006).
+        if self.ctx.position_open and self._open_trade is not None and last_bar is not None:
+            result = self.provider.execute_order(
+                account_id=self.account_id, ticker=self.ticker, direction=self.ctx.direction,
+                size=self._open_trade.size, reference_price=last_bar.price,
+                timestamp=last_bar.time, closing=True,
+            )
+            self._open_trade.close(last_bar.time, result.fill_price, "end_of_data")
+            self.logger.record(self._open_trade)
+            self.provider.on_trade_closed(self.account_id, self._open_trade.pnl)
+            print(f"[{last_bar.time}] EXIT {self.ctx.direction.upper()} @ {result.fill_price:.2f} "
+                  f"reason=end_of_data pnl={self._open_trade.pnl:+.2f}")
+            self._open_trade = None
+            self.ctx.position_open = False
         self.logger.write_csv()
         self.logger.print_summary()
 
@@ -89,7 +114,7 @@ class Simulator:
             try:
                 price, ts = DataFeed.get_last_price(ticker)
                 bar = Bar(time=ts, price=price)
-                self.feed_bar(bar)
+                self.feed_bar(bar, deduplicate=True)
             except Exception as e:
                 print(f"[{now}] fetch error: {e}", file=sys.stderr)
             self.stopped.wait(poll_seconds)
