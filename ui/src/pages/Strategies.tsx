@@ -118,25 +118,31 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <Card className="overflow-hidden">
-        <CardHeader className="cursor-pointer select-none" onClick={() => setOpen((v) => !v)}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <Zap className="h-4 w-4 shrink-0 text-primary" />
-              <CardTitle className="truncate text-base">{s.name}</CardTitle>
-              <Badge variant={s.source === "built-in" ? "secondary" : "outline"}>{s.source}</Badge>
+      <Card className="elevated overflow-hidden">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30"
+        >
+          <Zap className="h-4 w-4 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-sm font-semibold">{s.name}</span>
+              <Badge variant={s.source === "custom" ? "secondary" : "outline"}
+                     className="hidden text-[10px] sm:inline-flex">
+                {s.source}
+              </Badge>
               {Object.keys(s.params).length > 0 && (
-                <Badge variant="outline" className="hidden sm:inline-flex">
+                <span className="hidden text-[11px] text-muted-foreground sm:inline">
                   {Object.keys(s.params).length} params
-                </Badge>
+                </span>
               )}
             </div>
-            <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </motion.div>
+            <p className="truncate text-xs text-muted-foreground">{s.doc}</p>
           </div>
-          <CardDescription className="line-clamp-1">{s.doc}</CardDescription>
-        </CardHeader>
+          <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </motion.div>
+        </button>
 
         <AnimatePresence>
           {open && (
@@ -432,7 +438,7 @@ export function Strategies() {
       ) : filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground">No strategies match “{query}”.</p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {filtered.map((s) => <StrategyCard key={s.name} s={s} config={config} />)}
         </div>
       )}

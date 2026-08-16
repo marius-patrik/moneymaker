@@ -20,11 +20,13 @@ interface PipelineNodeProps {
 function PipelineNode({ data }: PipelineNodeProps) {
   return (
     <div
-      className={`rounded-lg border px-4 py-3 text-sm shadow-sm min-w-[120px] text-center ${data.color || "bg-card border-border"}`}
+      className={`w-[150px] rounded-xl border px-3 py-2.5 text-center text-sm ${data.color || "bg-card border-border"}`}
     >
       <Handle type="target" position={Position.Left} className="!bg-primary" />
-      <div className="font-semibold text-foreground">{data.label}</div>
-      {data.sub && <div className="text-xs text-muted-foreground mt-0.5">{data.sub}</div>}
+      <div className="truncate text-xs font-semibold text-foreground" title={data.label}>{data.label}</div>
+      {data.sub && (
+        <div className="truncate text-[10px] text-muted-foreground" title={data.sub}>{data.sub}</div>
+      )}
       <Handle type="source" position={Position.Right} className="!bg-primary" />
     </div>
   );
@@ -35,13 +37,13 @@ const nodeTypes = { pipeline: PipelineNode };
 function layoutDagre(nodes: Node[], edges: Edge[]): Node[] {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "LR", nodesep: 40, ranksep: 60 });
-  nodes.forEach((n) => g.setNode(n.id, { width: 140, height: 60 }));
+  g.setGraph({ rankdir: "LR", nodesep: 28, ranksep: 44 });
+  nodes.forEach((n) => g.setNode(n.id, { width: 150, height: 56 }));
   edges.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
   return nodes.map((n) => {
     const pos = g.node(n.id);
-    return { ...n, position: { x: pos.x - 70, y: pos.y - 30 } };
+    return { ...n, position: { x: pos.x - 75, y: pos.y - 28 } };
   });
 }
 
@@ -51,10 +53,11 @@ interface StrategyFlowProps {
 }
 
 export function StrategyFlow({ strategyName, params }: StrategyFlowProps) {
+  // Two params is all that fits legibly at node width.
   const paramSummary = Object.entries(params)
-    .slice(0, 3)
+    .slice(0, 2)
     .map(([k, v]) => `${k}=${v}`)
-    .join(", ");
+    .join(" ");
 
   const rawNodes: Node[] = [
     {
@@ -105,7 +108,7 @@ export function StrategyFlow({ strategyName, params }: StrategyFlowProps) {
   }, [strategyName]);
 
   return (
-    <div className="h-32 overflow-hidden rounded-lg border sm:h-44">
+    <div className="h-28 overflow-hidden rounded-xl border bg-muted/20 sm:h-36">
       <ReactFlow
         nodes={nodes}
         edges={edges}

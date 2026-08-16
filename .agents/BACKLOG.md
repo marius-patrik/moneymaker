@@ -203,3 +203,11 @@ The Trade tab was a full-width form with a dead lower half. Rebuilt as a
 two-column desk: price chart (GET /api/history) with last price, change,
 session high/low, beside a compact ticket that quotes automatically as the
 ticker is typed and shows notional against buying power.
+
+### Strategy list density + provenance (DONE 2026-08-16)
+Collapsed rows were tall cards holding two lines; they are now single dense
+rows. `source` distinguished only built-in from custom, so every strategy
+shipping with the repo was labelled as the user's own — it now reports
+built-in / bundled / custom by checking the bundled strategies directory.
+Pipeline diagram nodes overlapped because Dagre was told 150px while the
+node had no fixed width; both agree now and the labels truncate.

@@ -266,13 +266,40 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
 
     @api.get("/strategies")
     def list_strategies():
+        """
+        Strategies with where each came from.
+
+        "custom" used to mean anything not in BUILTIN_STRATEGIES, which
+        labelled every strategy that ships with the repo as the user's own.
+        A file that matches one in strategies/ is bundled; only genuinely
+        user-written files are custom.
+        """
+        from src.installer import _bundled_dir
+        try:
+            bundled = {p.stem for p in _bundled_dir().glob("*.py")
+                       if not p.name.startswith("_")}
+        except OSError:
+            bundled = set()
+
         strategies = load_strategies(state.home)
-        return {"strategies": [
-            {"name": n, "doc": (c.__doc__ or "").strip().split("\n")[0],
-             "source": "built-in" if n in BUILTIN_STRATEGIES else "custom",
-             "params": {k: _jsonable(v) for k, v in c.params().items()} if hasattr(c, "params") else {}}
-            for n, c in strategies.items()
-        ]}
+        out = []
+        for n, c in strategies.items():
+            if n in BUILTIN_STRATEGIES:
+                origin = "built-in"
+            elif n in bundled:
+                origin = "bundled"
+            else:
+                origin = "custom"
+            out.append({
+                "name": n,
+                "doc": (c.__doc__ or "").strip().split("\n")[0],
+                "source": origin,
+                "editable": origin == "custom" or (
+                    pathlib.Path(state.home) / "strategies" / f"{n}.py").is_file(),
+                "params": {k: _jsonable(v) for k, v in c.params().items()}
+                          if hasattr(c, "params") else {},
+            })
+        return {"strategies": out}
 
     @api.get("/strategies/{name}/source")
     def get_strategy_source(name: str):

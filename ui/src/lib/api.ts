@@ -45,7 +45,8 @@ const del = <T>(path: string) => req<T>("DELETE", path);
 export interface Strategy {
   name: string;
   doc: string;
-  source: "built-in" | "custom";
+  source: "built-in" | "bundled" | "custom";
+  editable?: boolean;
   params: Record<string, unknown>;
 }
 
