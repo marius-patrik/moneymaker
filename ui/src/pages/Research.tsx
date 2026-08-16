@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { FlaskConical, Loader2, Trophy, GitFork, Dna, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Panel, DataTable } from "@/components/terminal/Panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -90,15 +91,12 @@ function ForkEvalPanel({ strategies }: { strategies: Strategy[] }) {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Fork evaluation</CardTitle>
-          <CardDescription>
+      <Panel title="Fork evaluation">
+        <div className="space-y-3">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
             Runs every variant in the strategy's <code className="font-mono">FORKS</code> over identical
             windows and ranks them, so differences come from the parameters rather than the data.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          </p>
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
             <StrategyPicker strategies={strategies} value={form.strategy}
                             onValueChange={(v) => setForm((f) => ({ ...f, strategy: v }))} />
@@ -119,14 +117,13 @@ function ForkEvalPanel({ strategies }: { strategies: Strategy[] }) {
             )}
             {job && <JobBadge job={job} />}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       {forks.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">Ranked variants</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
+          <Panel title="Ranked variants">
+            <div className="space-y-2">
               {forks.map((f, i) => (
                 <div key={f.label} className="flex items-center gap-3 rounded-md border p-3">
                   <Badge variant={i === 0 ? "profit" : "outline"} className="w-7 shrink-0 justify-center">
@@ -154,8 +151,8 @@ function ForkEvalPanel({ strategies }: { strategies: Strategy[] }) {
                   </div>
                 </div>
               ))}
-            </CardContent>
-          </Card>
+            </div>
+          </Panel>
         </motion.div>
       )}
     </div>
@@ -194,15 +191,12 @@ function EvolvePanel({ strategies }: { strategies: Strategy[] }) {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Parameter evolution</CardTitle>
-          <CardDescription>
+      <Panel title="Parameter evolution">
+        <div className="space-y-3">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
             Hill-climbs the strategy's numeric parameters, keeping a change only when it improves the
             objective score. Few parameters beat many — the sample sizes here are small.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+          </p>
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3">
             <StrategyPicker strategies={strategies} value={form.strategy}
                             onValueChange={(v) => setForm((f) => ({ ...f, strategy: v }))} />
@@ -233,14 +227,13 @@ function EvolvePanel({ strategies }: { strategies: Strategy[] }) {
               navigate away; the job keeps going and appears under Jobs.
             </p>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       {result && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-          <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">Best parameters</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
+          <Panel title="Best parameters">
+            <div className="space-y-3">
               <div className={`text-2xl font-bold ${pnlColor(result.best_score)}`}>
                 {fmt(result.best_score, 4)}
               </div>
@@ -249,13 +242,12 @@ function EvolvePanel({ strategies }: { strategies: Strategy[] }) {
                   <Badge key={k} variant="secondary" className="font-mono text-[11px]">{k}={String(v)}</Badge>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </Panel>
 
           {gens.length > 1 && (
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Score by generation</CardTitle></CardHeader>
-              <CardContent>
+            <Panel title="Score by generation">
+              <div>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={gens} margin={{ left: 4, right: 4, top: 4, bottom: 4 }}>
@@ -267,8 +259,8 @@ function EvolvePanel({ strategies }: { strategies: Strategy[] }) {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </Panel>
           )}
         </motion.div>
       )}
@@ -341,14 +333,8 @@ function RecentRuns() {
   if (jobs.length === 0) return null;
 
   return (
-    <Card className="elevated">
-      <CardContent className="p-0">
-        <div className="border-b px-4 py-2.5">
-          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-            Recent runs
-          </span>
-        </div>
-        <div className="divide-y">
+    <Panel title="Recent runs" dense>
+      <div className="divide-y">
           {jobs.map((j) => (
             <div key={j.job_id} className="flex items-center gap-3 px-4 py-2.5">
               {j.status === "running"
@@ -367,9 +353,8 @@ function RecentRuns() {
               </span>
             </div>
           ))}
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </Panel>
   );
 }
 
@@ -460,7 +445,7 @@ export function Research() {
   }, []);
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <div className="space-y-3 p-3 sm:p-4">
       <div className="page-header">
         <h1 className="text-[15px] font-semibold tracking-tight">Research</h1>
         <p className="text-sm text-muted-foreground">

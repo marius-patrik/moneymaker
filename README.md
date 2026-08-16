@@ -421,6 +421,7 @@ The UI is built as a terminal rather than a dashboard of cards:
 - Surfaces are layered: a soft ambient wash on the page, panels above it, and
   frosted chrome the content scrolls beneath. Only P&L figures carry colour.
 - Icons animate on hover with a gesture in the direction the control acts.
+- All five pages share one surface language: panels, stats and tables.
 
 The layout is mobile-first and responsive — one implementation, not a
 separate mobile build. Below the `md` breakpoint the sidebar becomes a

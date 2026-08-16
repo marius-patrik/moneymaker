@@ -226,3 +226,9 @@ AnimatedIcon was rewritten: variant propagation from a parent whose `animate`
 prop pinned children to rest meant the icons never moved. It now tracks hover
 on the nearest interactive ancestor via animation controls — verified by
 measuring the transform matrix before and after hover.
+
+### Panel language applied app-wide (DONE 2026-08-16)
+Research, Accounts, Trade and the Dashboard all use Panel/Stat/DataTable now,
+so no page still shows the old floating-card treatment. Accounts and sessions
+render as tables; duplicated header lines were folded into panel titles and
+actions.

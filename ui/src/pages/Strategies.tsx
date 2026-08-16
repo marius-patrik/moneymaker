@@ -415,7 +415,7 @@ export function Strategies() {
   );
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <div className="space-y-3 p-3 sm:p-4">
       <div className="page-header justify-between">
         <div>
           <h1 className="text-[15px] font-semibold tracking-tight">Strategies</h1>
