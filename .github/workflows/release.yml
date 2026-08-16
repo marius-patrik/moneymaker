@@ -80,10 +80,13 @@ jobs:
 
       # ---- GitHub Packages (PyPI-compatible registry) ----
 
+      # GitHub Packages supports neither --skip-existing nor PEP 740
+      # attestations, so both are left off. The version bump above guarantees
+      # each run publishes a version that does not exist yet.
       - name: Publish to GitHub Packages
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://upload.pkg.github.com/
-          user: __token__
+          user: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          skip-existing: true
+          attestations: false
