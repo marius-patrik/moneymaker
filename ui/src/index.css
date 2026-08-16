@@ -125,7 +125,7 @@
   /* A sticky page header. Content passing underneath is what sells the
      frosting, so every page puts its title bar in one. */
   .page-header {
-    @apply glass sticky top-0 z-30 -mx-4 -mt-4 mb-5 border-b px-4 py-3.5 sm:-mx-6 sm:-mt-6 sm:px-6;
+    @apply glass sticky top-0 z-30 -mx-3 -mt-3 mb-3 flex items-center gap-3 border-b px-3 py-2.5 sm:-mx-4 sm:-mt-4 sm:px-4;
   }
 
   /* Elevation: a whisper of shadow plus a top highlight, the way a real

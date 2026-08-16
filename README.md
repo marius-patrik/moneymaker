@@ -408,10 +408,19 @@ tab for background work), **Live** (start/stop/monitor sessions, polls every
 3s), **Sessions** (trade tables with cumulative P&L charts), **Accounts**
 (create, search, delete, prune).
 
-Surfaces are layered rather than flat: the page carries a soft ambient wash,
-cards lift above it, and chrome that content scrolls beneath — the sidebar and
-each page's sticky header — is frosted glass. Only P&L figures carry colour;
-everything else is neutral.
+The UI is built as a terminal rather than a dashboard of cards:
+
+- A **global context bar** keeps equity, P&L, win rate and trade count on
+  screen at all times, with a live indicator and clock — the numbers that
+  matter are never a navigation away.
+- A **status bar** reports connection, data directory and version.
+- Content sits in **panels** with dense title strips and hairline seams, and
+  lists are **tables**, not stacks of cards.
+- **⌘K** opens a command palette over pages and strategies; ⌘B collapses the
+  rail, ⌘, opens settings.
+- Surfaces are layered: a soft ambient wash on the page, panels above it, and
+  frosted chrome the content scrolls beneath. Only P&L figures carry colour.
+- Icons animate on hover with a gesture in the direction the control acts.
 
 The layout is mobile-first and responsive — one implementation, not a
 separate mobile build. Below the `md` breakpoint the sidebar becomes a

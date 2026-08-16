@@ -103,33 +103,26 @@ export function Sidebar({
     <motion.aside
       animate={{ width: collapsed ? 60 : 216 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className="glass hidden h-dvh shrink-0 flex-col border-r md:flex"
+      className="hidden h-full shrink-0 flex-col border-r bg-card/40 md:flex"
     >
-      <div className={cn("flex h-14 items-center border-b", collapsed ? "justify-center px-2" : "justify-between px-4")}>
-        {!collapsed && (
-          <div className="flex items-center gap-2 overflow-hidden">
-            <TrendingUp className="h-5 w-5 shrink-0 text-primary" />
-            <span className="whitespace-nowrap text-sm font-bold tracking-tight">moneymaker</span>
-          </div>
-        )}
-        <MotionHost>
-          <button
-            onClick={onToggle}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-          >
-            <AnimatedIcon icon={collapsed ? PanelLeftOpen : PanelLeftClose}
-                          motionType="nudge" className="h-4 w-4" />
-          </button>
-        </MotionHost>
-      </div>
-
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
         <NavItems collapsed={collapsed} />
       </nav>
 
-      <div className="border-t p-2">
+      <div className="space-y-1 border-t p-2">
         <SettingsButton collapsed={collapsed} onClick={onOpenSettings} />
+        <button
+          onClick={onToggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+            collapsed && "justify-center"
+          )}
+        >
+          <AnimatedIcon icon={collapsed ? PanelLeftOpen : PanelLeftClose}
+                        motionType="nudge" className="h-4 w-4" />
+          {!collapsed && <span className="whitespace-nowrap">Collapse</span>}
+        </button>
       </div>
     </motion.aside>
   );

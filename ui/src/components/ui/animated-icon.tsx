@@ -1,64 +1,100 @@
 import * as React from "react";
-import { motion, type Variants } from "motion/react";
+import { motion, useAnimationControls, type Variants } from "motion/react";
 import { cn } from "@/lib/utils";
 
 /**
  * Motion wrappers for Lucide icons.
  *
- * Lucide ships static SVGs, so the animation lives in a wrapper rather than
- * the icon. Each variant is a short, purposeful gesture — a nudge in the
- * direction the control acts — not decoration. Everything is driven by the
- * parent's hover/active state via `whileHover`/`whileTap` on an ancestor
- * with `initial="rest"`, so an icon inside a button animates when the button
- * is hovered rather than only the icon itself.
+ * Lucide ships static SVGs, so the movement lives in a wrapper. Each variant
+ * is a short gesture in the direction the control acts — a nudge toward what
+ * will happen — rather than decoration.
  *
- * Respects prefers-reduced-motion: the transforms collapse to no-ops.
+ * Hover state is tracked on the wrapper itself rather than inherited from a
+ * parent variant: relying on propagation meant an `animate` prop on the host
+ * could pin the child to its rest state, which is exactly what stopped these
+ * from moving.
  */
 
 export type IconMotion =
-  | "lift"      // nudge up — navigation, links
-  | "nudge"     // slide right — "go", submit, next
-  | "spin"      // rotate — refresh, reload
-  | "pulse"     // scale in/out — live, active, running
-  | "wiggle"    // small rotate shake — settings, tuning
-  | "pop"       // quick scale — create, add
-  | "shake"     // horizontal shake — destructive
-  | "draw";     // scale from centre — charts, data
+  | "lift"    // up — navigation
+  | "nudge"   // right — go, submit, next
+  | "spin"    // rotate — refresh
+  | "pulse"   // scale — live, active
+  | "wiggle"  // shake — settings, tuning
+  | "pop"     // quick scale — create, add
+  | "shake"   // horizontal — destructive
+  | "draw";   // scale from centre — charts
 
-const VARIANTS: Record<IconMotion, Variants> = {
-  lift:  { rest: { y: 0 },              hover: { y: -2 } },
-  nudge: { rest: { x: 0 },              hover: { x: 2 } },
-  spin:  { rest: { rotate: 0 },         hover: { rotate: 180 } },
-  pulse: { rest: { scale: 1 },          hover: { scale: 1.12 } },
-  wiggle:{ rest: { rotate: 0 },         hover: { rotate: [0, -12, 12, 0] } },
-  pop:   { rest: { scale: 1 },          hover: { scale: 1.18 } },
-  shake: { rest: { x: 0 },              hover: { x: [0, -2, 2, -1, 0] } },
-  draw:  { rest: { scale: 1, opacity: 1 }, hover: { scale: 1.1 } },
+const HOVER: Record<IconMotion, Record<string, unknown>> = {
+  lift:   { y: -2.5 },
+  nudge:  { x: 2.5 },
+  spin:   { rotate: 180 },
+  pulse:  { scale: 1.18 },
+  wiggle: { rotate: [0, -14, 12, -6, 0] },
+  pop:    { scale: [1, 1.28, 1.1] },
+  shake:  { x: [0, -2.5, 2.5, -1.5, 0] },
+  draw:   { scale: 1.15, y: -1 },
 };
 
-const TRANSITION = { type: "spring", stiffness: 400, damping: 18 } as const;
+const REST: Record<IconMotion, Record<string, unknown>> = {
+  lift:   { y: 0 },
+  nudge:  { x: 0 },
+  spin:   { rotate: 0 },
+  pulse:  { scale: 1 },
+  wiggle: { rotate: 0 },
+  pop:    { scale: 1 },
+  shake:  { x: 0 },
+  draw:   { scale: 1, y: 0 },
+};
 
-export interface AnimatedIconProps extends React.ComponentProps<typeof motion.span> {
+const SPRING = { type: "spring", stiffness: 420, damping: 17 } as const;
+
+export interface AnimatedIconProps {
   icon: React.ElementType;
   motionType?: IconMotion;
   className?: string;
-  /** Animate continuously rather than on hover — for genuinely live state. */
+  /** Loop continuously — reserve for genuinely live state. */
   active?: boolean;
 }
 
 export function AnimatedIcon({
-  icon: Icon, motionType = "pulse", className, active = false, ...rest
+  icon: Icon, motionType = "pulse", className, active = false,
 }: AnimatedIconProps) {
-  const variants = VARIANTS[motionType];
+  const controls = useAnimationControls();
+  const hostRef = React.useRef<HTMLSpanElement | null>(null);
+
+  // Drive from the nearest interactive ancestor so the icon reacts when the
+  // whole button is hovered, not only the glyph.
+  React.useEffect(() => {
+    if (active) return;
+    const el = hostRef.current;
+    if (!el) return;
+    const target =
+      el.closest("button, a, [role=button], [data-motion-host]") ?? el;
+
+    const enter = () => controls.start({ ...HOVER[motionType], transition: SPRING });
+    const leave = () => controls.start({ ...REST[motionType], transition: SPRING });
+
+    target.addEventListener("pointerenter", enter);
+    target.addEventListener("pointerleave", leave);
+    target.addEventListener("focus", enter);
+    target.addEventListener("blur", leave);
+    return () => {
+      target.removeEventListener("pointerenter", enter);
+      target.removeEventListener("pointerleave", leave);
+      target.removeEventListener("focus", enter);
+      target.removeEventListener("blur", leave);
+    };
+  }, [controls, motionType, active]);
+
   return (
     <motion.span
-      variants={variants}
-      animate={active ? { scale: [1, 1.15, 1] } : undefined}
+      ref={hostRef}
+      animate={active ? { scale: [1, 1.16, 1], opacity: [1, 0.75, 1] } : controls}
       transition={active
-        ? { duration: 1.8, repeat: Infinity, ease: "easeInOut" }
-        : TRANSITION}
-      className={cn("inline-flex shrink-0", className)}
-      {...rest}
+        ? { duration: 1.9, repeat: Infinity, ease: "easeInOut" }
+        : SPRING}
+      className={cn("inline-flex shrink-0 items-center justify-center", className)}
     >
       <Icon className="h-full w-full" />
     </motion.span>
@@ -66,14 +102,14 @@ export function AnimatedIcon({
 }
 
 /**
- * Wrap any control so the icons inside it animate on hover/tap.
- * Put this on the button/link, not the icon.
+ * Optional wrapper for non-interactive hosts (a card that should animate its
+ * icons on hover). Buttons and links are detected automatically.
  */
 export const MotionHost = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<typeof motion.div>
 >(({ children, ...props }, ref) => (
-  <motion.div ref={ref} initial="rest" whileHover="hover" whileTap="hover" animate="rest" {...props}>
+  <motion.div ref={ref} data-motion-host {...props}>
     {children}
   </motion.div>
 ));

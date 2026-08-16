@@ -5,6 +5,7 @@ import {
   ArrowUpRight, ArrowDownRight, Zap, Play, DollarSign,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Panel, Stat } from "@/components/terminal/Panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,41 +113,35 @@ function Desk({ accounts }: { accounts: Account[] }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
       {/* chart */}
-      <Card className="elevated order-2 lg:order-1">
-        <CardContent className="space-y-3 p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <Panel className="order-2 lg:order-1" title={hist?.ticker ?? form.ticker}
+             actions={<span className="font-mono text-[10px] text-muted-foreground">
+               {hist?.interval ?? "1h"} · 5d</span>}>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <div className="flex items-baseline gap-3">
-              <span className="font-mono text-sm font-semibold">{hist?.ticker ?? form.ticker}</span>
-              <span className="text-2xl font-semibold tabular-nums tracking-tight">
+              <span className="font-mono text-[26px] font-semibold tabular-nums tracking-tight">
                 {last != null ? fmt(last) : "—"}
               </span>
               {hist && hist.bars.length > 1 && (
-                <span className={`text-sm font-medium tabular-nums ${up ? "text-profit" : "text-loss"}`}>
+                <span className={`font-mono text-sm font-medium tabular-nums ${up ? "text-profit" : "text-loss"}`}>
                   {up ? "+" : ""}{fmt(hist.change)} ({fmtPct(hist.change_pct)})
                 </span>
               )}
             </div>
-            <div className="flex gap-4 text-[11px] text-muted-foreground">
+            <div className="flex gap-4 font-mono text-[11px] tabular-nums text-muted-foreground">
               <span>H {hist?.high != null ? fmt(hist.high) : "—"}</span>
               <span>L {hist?.low != null ? fmt(hist.low) : "—"}</span>
-              <span>{hist?.interval ?? "1h"} · 5d</span>
             </div>
           </div>
           <div className="h-64">
             <PriceChart hist={hist} loading={loadingPx} />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       {/* ticket */}
-      <Card className="elevated order-1 lg:order-2">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Order ticket</CardTitle>
-          <CardDescription className="text-[11px]">
-            Paper accounts only — the simulated provider is the one wired for fills.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <Panel className="order-1 lg:order-2" title="Order ticket">
+        <div className="space-y-3">
           <Field label="Ticker" value={form.ticker} mono
                  onValueChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
           <Field label="Size" type="number" value={form.size}
@@ -201,8 +196,8 @@ function Desk({ accounts }: { accounts: Account[] }) {
               </Button>
             </MotionHost>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
     </div>
   );
 }
@@ -403,10 +398,10 @@ export function Trade() {
   }, []);
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <div className="page-header flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-3 p-3 sm:p-4">
+      <div className="page-header justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Trade</h1>
+          <h1 className="text-[15px] font-semibold tracking-tight">Trade</h1>
           <p className="text-sm text-muted-foreground">
             {ids.length === 0 ? "Nothing running" : `${ids.length} session${ids.length === 1 ? "" : "s"} running`}
           </p>

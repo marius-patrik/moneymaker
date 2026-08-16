@@ -215,3 +215,14 @@ node had no fixed width; both agree now and the labels truncate.
 ### Zero P&L was coloured as a win (DONE 2026-08-16)
 pnlColor used `n >= 0`, so a session that took no trades rendered $0.00 in
 profit green. Zero and null are neutral now; only a genuine gain is green.
+
+### UI reinvented as a terminal (DONE 2026-08-16)
+Replaced the card-dashboard layout with terminal chrome: a global context bar
+(equity / P&L / win rate / trades / live dot / clock), a bottom status strip,
+a Panel + Stat + DataTable primitive set, and a ⌘K command palette. Pages are
+panels of dense tables rather than stacks of floating cards.
+
+AnimatedIcon was rewritten: variant propagation from a parent whose `animate`
+prop pinned children to rest meant the icons never moved. It now tracks hover
+on the nearest interactive ancestor via animation controls — verified by
+measuring the transform matrix before and after hover.

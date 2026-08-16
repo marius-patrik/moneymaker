@@ -5,6 +5,7 @@ import {
   ChevronRight, ArrowLeft,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Panel, DataTable } from "@/components/terminal/Panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -152,53 +153,44 @@ function AccountsPanel() {
           {accounts.length === 0 ? "No accounts yet." : `No accounts match "${query}".`}
         </p>
       ) : (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <AnimatePresence mode="popLayout">
-              {shown.map((a, i) => (
-                <motion.div key={a.account_id} layout
-                            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ delay: Math.min(i, 12) * 0.02 }}>
-                  <Card className="group">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Wallet className="h-4 w-4 shrink-0 text-primary" />
-                          <CardTitle className="truncate text-sm">{a.name}</CardTitle>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <Badge variant="outline">{a.provider}</Badge>
-                          <Button size="icon" variant="ghost"
-                                  className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-                                  onClick={() => remove(a)} disabled={deleting === a.account_id}
-                                  aria-label={`Delete ${a.name}`}>
-                            {deleting === a.account_id
-                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              : <Trash2 className="h-3.5 w-3.5 text-destructive" />}
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="text-2xl font-bold tabular-nums">{fmtDollar(a.balance)}</div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{a.currency}</span><span>·</span>
-                        <span className="truncate font-mono">{a.account_id}</span>
-                      </div>
-                      {a.is_live && <Badge variant="destructive" className="text-xs">live</Badge>}
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
+        <Panel title={`${filtered.length} accounts`} dense>
+          <DataTable head={<><th>Name</th><th>Provider</th><th>Currency</th>
+                            <th className="!text-right">Balance</th><th className="w-8" /></>}>
+            {shown.map((a) => (
+              <tr key={a.account_id} className="group">
+                <td>
+                  <div className="flex items-center gap-2">
+                    <Wallet className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="font-medium">{a.name}</span>
+                    {a.is_live && <Badge variant="destructive" className="text-[10px]">live</Badge>}
+                  </div>
+                  <div className="pl-5 font-mono text-[10px] text-muted-foreground">{a.account_id}</div>
+                </td>
+                <td className="text-muted-foreground">{a.provider}</td>
+                <td className="text-muted-foreground">{a.currency}</td>
+                <td className="text-right font-mono tabular-nums">{fmtDollar(a.balance)}</td>
+                <td>
+                  <button
+                    onClick={() => remove(a)}
+                    disabled={deleting === a.account_id}
+                    aria-label={`Delete ${a.name}`}
+                    className="rounded p-1 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
+                  >
+                    {deleting === a.account_id
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Trash2 className="h-3.5 w-3.5 text-destructive" />}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </DataTable>
           {filtered.length > shown.length && (
-            <Button variant="outline" className="w-full" onClick={() => setLimit((n) => n + 48)}>
-              Show more ({filtered.length - shown.length} remaining)
-            </Button>
+            <button onClick={() => setLimit((n) => n + 48)}
+                    className="w-full border-t py-2 text-xs text-muted-foreground hover:bg-accent/40">
+              Show {filtered.length - shown.length} more
+            </button>
           )}
-        </>
+        </Panel>
       )}
     </div>
   );
@@ -349,34 +341,25 @@ function SessionsPanel() {
           {sessions.length === 0 ? "No sessions yet — run a backtest from Strategies." : "Nothing matches."}
         </p>
       ) : (
-        <Card>
-          <CardContent className="divide-y p-0">
+        <Panel title={`${visible.length} runs`} dense>
+          <DataTable head={<><th>Session</th><th>When</th><th className="!text-right">Trades</th>
+                            <th className="!text-right">Win</th><th className="!text-right">P&L</th><th className="w-6" /></>}>
             {visible.map((s) => (
-              <button key={s.name} onClick={() => open(s)}
-                      className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/40">
-                <div className="flex min-w-0 items-center gap-2">
-                  <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <div className="truncate font-mono text-xs">{s.name}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {s.modified.replace("T", " ")}
-                      {s.trades != null && ` · ${s.trades} trades`}
-                      {s.win_rate != null && ` · ${fmtPct(s.win_rate)} win`}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {s.total_pnl != null && (
-                    <span className={`text-sm font-semibold tabular-nums ${pnlColor(s.total_pnl)}`}>
-                      {fmtDollar(s.total_pnl)}
-                    </span>
-                  )}
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </button>
+              <tr key={s.name} onClick={() => open(s)} className="cursor-pointer">
+                <td className="max-w-0 truncate font-mono" title={s.name}>{s.name}</td>
+                <td className="whitespace-nowrap text-muted-foreground">{s.modified.replace("T", " ")}</td>
+                <td className="text-right tabular-nums text-muted-foreground">{s.trades ?? "—"}</td>
+                <td className="text-right tabular-nums text-muted-foreground">
+                  {s.win_rate != null ? fmtPct(s.win_rate) : "—"}
+                </td>
+                <td className={`text-right font-mono tabular-nums ${pnlColor(s.total_pnl)}`}>
+                  {s.total_pnl != null ? fmtDollar(s.total_pnl) : "—"}
+                </td>
+                <td><ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /></td>
+              </tr>
             ))}
-          </CardContent>
-        </Card>
+          </DataTable>
+        </Panel>
       )}
     </div>
   );
@@ -386,9 +369,9 @@ function SessionsPanel() {
 
 export function Accounts() {
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <div className="space-y-3 p-3 sm:p-4">
       <div className="page-header">
-        <h1 className="text-xl font-semibold tracking-tight">Accounts</h1>
+        <h1 className="text-[15px] font-semibold tracking-tight">Accounts</h1>
       </div>
       <Tabs defaultValue="accounts">
         <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
