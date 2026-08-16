@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
@@ -146,34 +147,22 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Ticker</Label>
-                    <Input value={form.ticker} onChange={(e) => setForm((f) => ({ ...f, ticker: e.target.value }))}
-                           className="h-8 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Interval</Label>
-                    <Input value={form.interval} onChange={(e) => setForm((f) => ({ ...f, interval: e.target.value }))}
-                           className="h-8 text-sm" />
-                  </div>
+                  <Field label="Ticker" value={form.ticker}
+                         onValueChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
+                  <Field label="Interval" value={form.interval}
+                         onValueChange={(v) => setForm((f) => ({ ...f, interval: v }))} />
 
                   {mode === "single" ? (
                     <>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Start</Label>
-                        <Input value={form.start} onChange={(e) => setForm((f) => ({ ...f, start: e.target.value }))}
-                               className="h-8 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">End</Label>
-                        <Input value={form.end} onChange={(e) => setForm((f) => ({ ...f, end: e.target.value }))}
-                               className="h-8 text-sm" />
-                      </div>
-                      <div className="col-span-2 space-y-1">
-                        <Label className="text-xs">Data provider</Label>
+                      <Field label="Start" value={form.start}
+                             onValueChange={(v) => setForm((f) => ({ ...f, start: v }))} />
+                      <Field label="End" value={form.end}
+                             onValueChange={(v) => setForm((f) => ({ ...f, end: v }))} />
+                      <div className="space-y-1 min-[420px]:col-span-2">
+                        <Label htmlFor={`dp-${s.name}`} className="text-xs">Data provider</Label>
                         <Select value={form.data_provider}
                                 onValueChange={(v) => setForm((f) => ({ ...f, data_provider: v }))}>
-                          <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectTrigger id={`dp-${s.name}`} className="h-8 text-sm"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {(config?.data_providers ?? ["yfinance"]).map((p) => (
                               <SelectItem key={p} value={p}>{p}</SelectItem>
@@ -183,10 +172,10 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
                       </div>
                     </>
                   ) : (
-                    <div className="col-span-2 space-y-1 sm:col-span-2">
-                      <Label className="text-xs">Windows</Label>
-                      <Input value={form.windows} onChange={(e) => setForm((f) => ({ ...f, windows: e.target.value }))}
-                             className="h-8 font-mono text-xs" placeholder="start:end,start:end" />
+                    <div className="min-[420px]:col-span-2">
+                      <Field label="Windows" value={form.windows} mono
+                             onValueChange={(v) => setForm((f) => ({ ...f, windows: v }))}
+                             placeholder="start:end,start:end" />
                     </div>
                   )}
                 </div>
@@ -218,14 +207,15 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
                               {Object.entries(s.params).map(([k, def]) => {
                                 const isChanged = String(def) !== params[k];
                                 return (
-                                  <div key={k} className="space-y-1">
-                                    <Label className={`text-[11px] ${isChanged ? "text-primary" : ""}`}>{k}</Label>
-                                    <Input
-                                      value={params[k] ?? ""}
-                                      onChange={(e) => setParams((p) => ({ ...p, [k]: e.target.value }))}
-                                      className={`h-7 font-mono text-xs ${isChanged ? "border-primary" : ""}`}
-                                    />
-                                  </div>
+                                  <Field
+                                    key={k}
+                                    label={k}
+                                    value={params[k] ?? ""}
+                                    onValueChange={(v) => setParams((p) => ({ ...p, [k]: v }))}
+                                    mono
+                                    labelClassName={isChanged ? "text-primary" : undefined}
+                                    className={`h-7 ${isChanged ? "border-primary" : ""}`}
+                                  />
                                 );
                               })}
                             </div>
@@ -327,6 +317,7 @@ export function Strategies() {
           </p>
         </div>
         <Input value={query} onChange={(e) => setQuery(e.target.value)}
+               aria-label="Filter strategies"
                placeholder="Filter…" className="h-8 w-full text-sm sm:max-w-56" />
       </div>
 

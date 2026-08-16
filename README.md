@@ -119,6 +119,7 @@ ui/                                 React + TypeScript web UI (Bun + RSBuild)
     lib/utils.ts                    cn() + number/currency formatters
     components/ui/                  shadcn/ui primitives
     components/layout/Sidebar.tsx   desktop rail + mobile drawer
+    components/ui/field.tsx         label-bound input (accessible by construction)
     components/StrategyFlow.tsx     Dagre-laid-out pipeline diagram
     pages/                          Dashboard, Strategies, Research, Live, Sessions, Accounts
 
@@ -129,6 +130,7 @@ tests/
   test_agents.py                    fork-eval + evolution tests
   test_jobs.py                      background job runner tests
   test_service.py                   launchd/systemd template + path tests
+  test_server_routes.py             API routes + SPA fallback tests
 ```
 
 ## Data directory
@@ -430,7 +432,7 @@ pytest
 ```
 
 The test suite runs entirely against synthetic price data — no network
-calls, no live yfinance requests. All 67 tests pass on Python 3.11 and 3.12.
+calls, no live yfinance requests. All 84 tests pass on Python 3.11 and 3.12.
 CI runs on every push via GitHub Actions (`.github/workflows/ci.yml`), which
 also typechecks and builds the web UI.
 

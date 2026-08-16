@@ -135,7 +135,11 @@ class OptimizeBody(BaseModel):
 # Factory
 # ---------------------------------------------------------------------------
 
-def make_app(home: str) -> FastAPI:
+def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
+    """
+    Build the app. `ui_dist` overrides where the built SPA is found, which
+    lets tests exercise the fallback without depending on a real UI build.
+    """
     state = ServerState(home)
     app = FastAPI(title="moneymaker", version="0.4.0")
 
@@ -515,10 +519,40 @@ def make_app(home: str) -> FastAPI:
 
     app.include_router(api)
 
-    # Serve built React SPA — only if ui/dist exists (production)
-    dist = pathlib.Path(__file__).parent.parent / "ui" / "dist"
+    # Serve the built React SPA — only when ui/dist exists (production).
+    dist = ui_dist or (pathlib.Path(__file__).parent.parent / "ui" / "dist")
     if dist.is_dir():
-        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
+        # Real files (JS, CSS, favicon) are served from /static and friends.
+        static_dir = dist / "static"
+        if static_dir.is_dir():
+            app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+        index = dist / "index.html"
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        def spa(full_path: str):
+            """
+            Client-side routing fallback.
+
+            StaticFiles(html=True) serves index.html for "/" but 404s every
+            other path, so loading or refreshing /strategies directly broke
+            in production. The dev server does its own fallback, which is
+            why this only showed up under `serve --prod`.
+
+            Anything that looks like a real file still 404s properly rather
+            than silently returning HTML — that turns a missing asset into a
+            confusing parse error instead of an obvious 404.
+            """
+            # Unknown API routes must stay JSON 404s — an API client should
+            # never receive the HTML shell in place of an error.
+            if full_path == "api" or full_path.startswith("api/"):
+                raise HTTPException(404, "not found")
+            candidate = dist / full_path
+            if full_path and candidate.is_file():
+                return FileResponse(candidate)
+            if "." in pathlib.PurePath(full_path).name:
+                raise HTTPException(404, "not found")
+            return FileResponse(index)
 
     return app
 

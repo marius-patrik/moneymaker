@@ -4,7 +4,7 @@ import { Activity, StopCircle, Play, Loader2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, type Strategy, type LiveStatus } from "@/lib/api";
@@ -103,7 +103,7 @@ export function Live() {
     <div className="space-y-6 p-4 sm:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Live Trading</h1>
-        <Button variant="ghost" size="sm" onClick={refresh}>
+        <Button variant="ghost" size="sm" onClick={refresh} aria-label="Refresh live sessions">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
@@ -113,10 +113,10 @@ export function Live() {
         <CardHeader><CardTitle className="text-base">Start a live session</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="space-y-1 col-span-2 sm:col-span-1">
-              <Label className="text-xs">Strategy</Label>
+            <div className="col-span-2 space-y-1 sm:col-span-1">
+              <Label htmlFor="live-strategy" className="text-xs">Strategy</Label>
               <Select value={form.strategy} onValueChange={(v) => setForm((f) => ({ ...f, strategy: v }))}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select strategy" /></SelectTrigger>
+                <SelectTrigger id="live-strategy" className="h-8 text-sm"><SelectValue placeholder="Select strategy" /></SelectTrigger>
                 <SelectContent>
                   {strategies.map((s) => <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>)}
                 </SelectContent>
@@ -127,10 +127,8 @@ export function Live() {
               { label: "End Time", key: "end_time" as const },
               { label: "Poll (s)", key: "poll_seconds" as const },
             ].map(({ label, key }) => (
-              <div key={key} className="space-y-1">
-                <Label className="text-xs">{label}</Label>
-                <Input value={form[key]} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} className="h-8 text-sm" />
-              </div>
+              <Field key={key} label={label} value={form[key]}
+                     onValueChange={(v) => setForm((f) => ({ ...f, [key]: v }))} />
             ))}
           </div>
           <Button onClick={start} disabled={starting || !form.strategy} className="w-full sm:w-auto">

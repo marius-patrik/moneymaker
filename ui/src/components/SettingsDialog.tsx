@@ -3,7 +3,7 @@ import { KeyRound, Trash2, Loader2, Server, Database, FolderOpen } from "lucide-
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -146,15 +146,12 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <div className="space-y-2 rounded-md border p-3">
               <Label className="text-xs font-semibold">Add credential (env var reference)</Label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <Input placeholder="provider" value={form.provider}
-                       onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value }))}
-                       className="h-8 text-xs" />
-                <Input placeholder="key" value={form.key}
-                       onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
-                       className="h-8 text-xs" />
-                <Input placeholder="ENV_VAR_NAME" value={form.env_var}
-                       onChange={(e) => setForm((f) => ({ ...f, env_var: e.target.value }))}
-                       className="h-8 font-mono text-xs" />
+                <Field label="Provider" placeholder="alpaca" value={form.provider}
+                       onValueChange={(v) => setForm((f) => ({ ...f, provider: v }))} />
+                <Field label="Key" placeholder="api_key" value={form.key}
+                       onValueChange={(v) => setForm((f) => ({ ...f, key: v }))} />
+                <Field label="Env var" placeholder="ALPACA_API_KEY" mono value={form.env_var}
+                       onValueChange={(v) => setForm((f) => ({ ...f, env_var: v }))} />
               </div>
               <Button size="sm" className="w-full" onClick={saveCred}
                       disabled={saving || !form.provider || !form.env_var}>

@@ -108,9 +108,16 @@ export function Dashboard() {
             <CardContent className="pt-4">
               <div className="space-y-1">
                 {sessions.slice(-8).reverse().map((s) => (
-                  <div key={s} className="flex items-center justify-between py-1 text-sm">
-                    <span className="font-mono text-muted-foreground">{s}</span>
-                    <Badge variant="outline">{s.endsWith(".csv") ? "trades" : "json"}</Badge>
+                  <div key={s} className="flex items-center justify-between gap-2 py-1 text-sm">
+                    {/* Session names are long; truncate rather than let them
+                        run past the card edge on a phone. */}
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground sm:text-sm"
+                          title={s}>
+                      {s}
+                    </span>
+                    <Badge variant="outline" className="shrink-0">
+                      {s.endsWith(".csv") ? "trades" : "json"}
+                    </Badge>
                   </div>
                 ))}
               </div>

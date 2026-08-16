@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { FlaskConical, Loader2, Trophy, GitFork, Dna, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -43,29 +43,21 @@ function JobBadge({ job }: { job: Job }) {
 }
 
 function StrategyPicker({
-  strategies, value, onChange,
-}: { strategies: Strategy[]; value: string; onChange: (v: string) => void }) {
+  strategies, value, onValueChange,
+}: { strategies: Strategy[]; value: string; onValueChange: (v: string) => void }) {
+  // Bind the label to the trigger so it is announced and clickable.
+  const id = React.useId();
   return (
     <div className="space-y-1">
-      <Label className="text-xs">Strategy</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select strategy" /></SelectTrigger>
+      <Label htmlFor={id} className="text-xs">Strategy</Label>
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger id={id} className="h-8 text-sm">
+          <SelectValue placeholder="Select strategy" />
+        </SelectTrigger>
         <SelectContent>
           {strategies.map((s) => <SelectItem key={s.name} value={s.name}>{s.name}</SelectItem>)}
         </SelectContent>
       </Select>
-    </div>
-  );
-}
-
-function Field({ label, value, onChange, placeholder, mono }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean;
-}) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs">{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-             className={`h-8 text-sm ${mono ? "font-mono text-xs" : ""}`} />
     </div>
   );
 }
@@ -109,11 +101,11 @@ function ForkEvalPanel({ strategies }: { strategies: Strategy[] }) {
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
             <StrategyPicker strategies={strategies} value={form.strategy}
-                            onChange={(v) => setForm((f) => ({ ...f, strategy: v }))} />
-            <Field label="Ticker" value={form.ticker} onChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
-            <Field label="Interval" value={form.interval} onChange={(v) => setForm((f) => ({ ...f, interval: v }))} />
+                            onValueChange={(v) => setForm((f) => ({ ...f, strategy: v }))} />
+            <Field label="Ticker" value={form.ticker} onValueChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
+            <Field label="Interval" value={form.interval} onValueChange={(v) => setForm((f) => ({ ...f, interval: v }))} />
             <Field label="Windows" value={form.windows} mono
-                   onChange={(v) => setForm((f) => ({ ...f, windows: v }))} placeholder="start:end,start:end" />
+                   onValueChange={(v) => setForm((f) => ({ ...f, windows: v }))} placeholder="start:end,start:end" />
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={run} disabled={loading || !form.strategy}>
@@ -213,15 +205,15 @@ function EvolvePanel({ strategies }: { strategies: Strategy[] }) {
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3">
             <StrategyPicker strategies={strategies} value={form.strategy}
-                            onChange={(v) => setForm((f) => ({ ...f, strategy: v }))} />
-            <Field label="Ticker" value={form.ticker} onChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
-            <Field label="Interval" value={form.interval} onChange={(v) => setForm((f) => ({ ...f, interval: v }))} />
+                            onValueChange={(v) => setForm((f) => ({ ...f, strategy: v }))} />
+            <Field label="Ticker" value={form.ticker} onValueChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
+            <Field label="Interval" value={form.interval} onValueChange={(v) => setForm((f) => ({ ...f, interval: v }))} />
             <Field label="Generations" value={form.generations}
-                   onChange={(v) => setForm((f) => ({ ...f, generations: v }))} />
+                   onValueChange={(v) => setForm((f) => ({ ...f, generations: v }))} />
             <Field label="Perturbation" value={form.perturbation}
-                   onChange={(v) => setForm((f) => ({ ...f, perturbation: v }))} />
+                   onValueChange={(v) => setForm((f) => ({ ...f, perturbation: v }))} />
             <Field label="Windows" value={form.windows} mono
-                   onChange={(v) => setForm((f) => ({ ...f, windows: v }))} />
+                   onValueChange={(v) => setForm((f) => ({ ...f, windows: v }))} />
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={run} disabled={loading || !form.strategy}>

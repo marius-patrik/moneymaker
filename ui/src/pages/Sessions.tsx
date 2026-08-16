@@ -149,6 +149,7 @@ export function Sessions() {
           </p>
         </div>
         <Input value={filter} onChange={(e) => setFilter(e.target.value)}
+               aria-label="Filter sessions"
                placeholder="Filter sessions…" className="h-8 w-full text-sm sm:max-w-56" />
       </div>
       {visible.length === 0 ? (

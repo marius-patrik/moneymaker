@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field } from "@/components/ui/field";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { api, type Account } from "@/lib/api";
@@ -39,14 +39,11 @@ function CreateDialog({ onCreated }: { onCreated: (a: Account) => void }) {
       <DialogContent>
         <DialogHeader><DialogTitle>Create Account</DialogTitle></DialogHeader>
         <div className="space-y-3 pt-2">
-          <div className="space-y-1">
-            <Label>Name</Label>
-            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="my-account" />
-          </div>
-          <div className="space-y-1">
-            <Label>Starting Balance (USD)</Label>
-            <Input type="number" value={form.starting_balance} onChange={(e) => setForm((f) => ({ ...f, starting_balance: e.target.value }))} />
-          </div>
+          <Field label="Name" value={form.name} className="h-10"
+                 onValueChange={(v) => setForm((f) => ({ ...f, name: v }))} placeholder="my-account" />
+          <Field label="Starting balance (USD)" type="number" value={form.starting_balance}
+                 className="h-10"
+                 onValueChange={(v) => setForm((f) => ({ ...f, starting_balance: v }))} />
           {error && <p className="text-xs text-destructive">{error}</p>}
           <Button className="w-full" onClick={submit} disabled={loading || !form.name}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -132,6 +129,7 @@ export function Accounts() {
             <Input
               value={query}
               onChange={(e) => { setQuery(e.target.value); setLimit(24); }}
+              aria-label="Filter accounts"
               placeholder="Filter by name or id…"
               className="h-8 w-full pl-8 text-sm sm:w-56"
             />
