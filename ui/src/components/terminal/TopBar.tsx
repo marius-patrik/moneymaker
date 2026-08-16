@@ -43,6 +43,10 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
         <Metric label="Equity" value={stats ? fmtDollar(stats.total_balance) : "—"} />
         <Metric label="P&L" value={stats ? fmtDollar(stats.total_pnl) : "—"}
                 tone={stats ? pnlColor(stats.total_pnl) : undefined} />
+        {stats && stats.open_positions > 0 && (
+          <Metric label="Open" value={fmtDollar(stats.unrealised_pnl)}
+                  tone={pnlColor(stats.unrealised_pnl)} />
+        )}
         <Metric label="Win" value={stats?.win_rate != null ? fmtPct(stats.win_rate) : "—"}
                 className="hidden min-[560px]:flex" />
         <Metric label="Trades" value={stats ? String(stats.trades) : "—"} className="hidden min-[720px]:flex" />

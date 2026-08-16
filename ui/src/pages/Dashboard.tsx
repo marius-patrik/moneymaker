@@ -55,9 +55,14 @@ export function Dashboard() {
                 className="space-y-3 p-3 pb-8 sm:p-4">
       {/* performance summary — one panel, not eight floating tiles */}
       <Panel title="Performance">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4 xl:grid-cols-8">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-9">
           <Stat label="Net P&L" value={fmtDollar(pnl)} tone={tone(pnl)}
-                sub={`${stats.trades} trades`} />
+                sub={stats.open_positions > 0
+                     ? `${stats.trades} closed + ${stats.open_positions} open`
+                     : `${stats.trades} trades`} />
+          <Stat label="Unrealised" value={fmtDollar(stats.unrealised_pnl)}
+                tone={tone(stats.unrealised_pnl)}
+                sub={`${stats.open_positions} open`} />
           <Stat label="Win rate" value={stats.win_rate != null ? fmtPct(stats.win_rate) : "—"}
                 sub={`${stats.wins}W / ${stats.losses}L`} />
           <Stat label="Profit factor"

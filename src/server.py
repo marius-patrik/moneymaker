@@ -200,6 +200,42 @@ class OptimizeBody(BaseModel):
 # Factory
 # ---------------------------------------------------------------------------
 
+def _mark_open(home: str, account_id: Optional[str] = None) -> tuple[list[dict], float]:
+    """
+    Open manual positions marked to market, plus their total unrealised P&L.
+
+    Headline figures counted realised P&L only, so an open position was
+    invisible in every total — the account could be deep in a losing trade
+    and the dashboard would show it flat.
+    """
+    from src.book import ManualBook
+    from src.data_providers import make_data_provider
+
+    rows = ManualBook(home).list(account_id)
+    if not rows:
+        return [], 0.0
+
+    prov = make_data_provider("yfinance", home)
+    marks: dict[str, Optional[float]] = {}
+    total = 0.0
+    out = []
+    for pos in rows:
+        tk = pos["ticker"]
+        if tk not in marks:
+            try:
+                marks[tk] = prov.get_last_price(tk)[0]
+            except Exception:
+                marks[tk] = None      # a quote failure must not hide the position
+        mark = marks[tk]
+        unreal = None
+        if mark is not None:
+            sign = 1 if pos["direction"] == "long" else -1
+            unreal = round(sign * (mark - pos["entry_price"]) * pos["size"], 2)
+            total += unreal
+        out.append({**pos, "mark": mark, "unrealised_pnl": unreal})
+    return out, round(total, 2)
+
+
 def _num(v: Optional[str]) -> Optional[float]:
     """Parse a CSV numeric cell, tolerating blanks and junk."""
     if v in (None, ""):
@@ -1089,9 +1125,10 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
                     }
                     (closed_rows if r.get("exit_time") else open_rows).append(entry)
 
-        # Manual positions live in their own book until closed.
-        from src.book import ManualBook
-        for m in ManualBook(state.home).list(account_id):
+        # Manual positions live in their own book until closed, marked to
+        # market so the view shows what they are worth now.
+        marked, unrealised = _mark_open(state.home, account_id)
+        for m in marked:
             open_rows.append({
                 "run": "manual", "id": m["id"],
                 "ticker": m["ticker"], "direction": m["direction"],
@@ -1099,16 +1136,19 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
                 "entry_price": m["entry_price"], "exit_time": "", "exit_price": None,
                 "exit_reason": "", "pnl": None, "pnl_pct": "",
                 "account_id": m["account_id"],
+                "mark": m["mark"], "unrealised_pnl": m["unrealised_pnl"],
             })
 
         closed_rows.sort(key=lambda t: t["entry_time"], reverse=True)
-        realised = sum(t["pnl"] or 0.0 for t in closed_rows)
+        realised = round(sum(t["pnl"] or 0.0 for t in closed_rows), 2)
         return {
             "open": open_rows[:limit],
             "closed": closed_rows[:limit],
             "open_count": len(open_rows),
             "closed_count": len(closed_rows),
-            "realised_pnl": round(realised, 2),
+            "realised_pnl": realised,
+            "unrealised_pnl": unrealised,
+            "total_pnl": round(realised + unrealised, 2),
         }
 
     @api.get("/pnl-distribution")
@@ -1206,13 +1246,20 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
 
         mgr = AccountManager(state.home)
         accounts = mgr.list()
+        open_rows, unrealised = _mark_open(state.home)
+        realised = round(sum(pnls), 2)
 
         return {
             "sessions": sessions,
             "accounts": len(accounts),
             "total_balance": round(sum(a.balance for a in accounts), 2),
             "trades": len(pnls),
-            "total_pnl": round(sum(pnls), 2),
+            "realised_pnl": realised,
+            "unrealised_pnl": unrealised,
+            "open_positions": len(open_rows),
+            # total_pnl now means realised + unrealised, so an open trade is
+            # visible in the headline rather than only after it closes.
+            "total_pnl": round(realised + unrealised, 2),
             "win_rate": round(len(wins) / len(pnls), 4) if pnls else None,
             "wins": len(wins),
             "losses": len(losses),

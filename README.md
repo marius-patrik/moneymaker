@@ -336,10 +336,12 @@ POST /api/fork-eval       {strategy, ticker, windows, interval?}       → Job
 POST /api/evolve          {strategy, ticker, windows, generations?}    → Job
 GET  /api/rankings
 GET  /api/jobs                 GET /api/jobs/<id>   POST /api/jobs/<id>/cancel
-GET  /api/stats                aggregate P&L, win rate, profit factor
+GET  /api/stats                realised + unrealised P&L, win rate, profit factor
 GET  /api/equity               cumulative P&L across every session
 POST /api/orders          {ticker, direction, size, account_id?}  — manual order
 GET  /api/quote/<ticker>       last price
+GET  /api/search?q=           instrument search
+GET  /api/pnl-distribution    trade-P&L histogram + win/loss composition
 GET  /api/history/<ticker>     OHLCV candles for the chart
 GET  /api/positions            open positions + trade history (account-scoped)
 GET  /api/positions/<id>       one position, marked to market

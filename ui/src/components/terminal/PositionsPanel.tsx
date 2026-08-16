@@ -110,7 +110,10 @@ export function PositionsPanel({
             : (
               <DataTable head={<><th>Instrument</th><th>Side</th><th>Opened</th>
                                 <th className="!text-right">Size</th>
-                                <th className="!text-right">Entry</th><th className="w-8" /></>}>
+                                <th className="!text-right">Entry</th>
+                                <th className="!text-right">Mark</th>
+                                <th className="!text-right">Unrealised</th>
+                                <th className="w-8" /></>}>
                 <AnimatePresence initial={false}>
                   {rows.map((t: PositionRow, i) => (
                     <motion.tr key={t.id ?? `${t.run}-${i}`} layout
@@ -130,6 +133,12 @@ export function PositionsPanel({
                       </td>
                       <td className="text-right font-mono tabular-nums">
                         {t.entry_price != null ? fmt(t.entry_price) : "—"}
+                      </td>
+                      <td className="text-right font-mono tabular-nums">
+                        {t.mark != null ? fmt(t.mark) : "—"}
+                      </td>
+                      <td className={`text-right font-mono tabular-nums ${pnlColor(t.unrealised_pnl ?? 0)}`}>
+                        {t.unrealised_pnl != null ? fmtDollar(t.unrealised_pnl) : "—"}
                       </td>
                       <td className="text-right text-[10px] text-muted-foreground">
                         {t.id ? "inspect" : t.run}

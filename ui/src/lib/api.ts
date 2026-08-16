@@ -137,6 +137,8 @@ export interface PositionRow {
   run: string;
   /** Present only for manual positions, which can be closed by hand. */
   id?: string;
+  mark?: number | null;
+  unrealised_pnl?: number | null;
   ticker: string;
   direction: string;
   size: number | null;
@@ -175,6 +177,8 @@ export interface PositionsResponse {
   open_count: number;
   closed_count: number;
   realised_pnl: number;
+  unrealised_pnl: number;
+  total_pnl: number;
 }
 
 export interface Stats {
@@ -182,6 +186,10 @@ export interface Stats {
   accounts: number;
   total_balance: number;
   trades: number;
+  realised_pnl: number;
+  unrealised_pnl: number;
+  open_positions: number;
+  /** Realised + unrealised, so an open trade shows in the headline. */
   total_pnl: number;
   win_rate: number | null;
   wins: number;

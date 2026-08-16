@@ -57,10 +57,14 @@ export function Portfolio() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Stat label="Equity" value={fmtDollar(equity)}
                 sub={account === ALL ? `${list.length} accounts` : scoped?.provider} />
-          <Stat label="Realised P&L" value={d ? fmtDollar(d.realised_pnl) : "—"}
-                tone={!d || d.realised_pnl === 0 ? "neutral" : d.realised_pnl > 0 ? "profit" : "loss"} />
-          <Stat label="Open positions" value={d ? String(d.open_count) : "—"} />
-          <Stat label="Closed trades" value={d ? String(d.closed_count) : "—"} />
+          <Stat label="Realised" value={d ? fmtDollar(d.realised_pnl) : "—"}
+                tone={!d || d.realised_pnl === 0 ? "neutral" : d.realised_pnl > 0 ? "profit" : "loss"}
+                sub={d ? `${d.closed_count} closed` : undefined} />
+          <Stat label="Unrealised" value={d ? fmtDollar(d.unrealised_pnl) : "—"}
+                tone={!d || d.unrealised_pnl === 0 ? "neutral" : d.unrealised_pnl > 0 ? "profit" : "loss"}
+                sub={d ? `${d.open_count} open` : undefined} />
+          <Stat label="Total P&L" value={d ? fmtDollar(d.total_pnl) : "—"}
+                tone={!d || d.total_pnl === 0 ? "neutral" : d.total_pnl > 0 ? "profit" : "loss"} />
         </div>
       </Panel>
 
@@ -72,7 +76,10 @@ export function Portfolio() {
             : (
               <DataTable head={<><th>Instrument</th><th>Side</th><th>Opened</th>
                                 <th className="!text-right">Size</th>
-                                <th className="!text-right">Entry</th><th>Run</th></>}>
+                                <th className="!text-right">Entry</th>
+                                <th className="!text-right">Mark</th>
+                                <th className="!text-right">Unrealised</th>
+                                <th>Run</th></>}>
                 {d!.open.map((t, i) => (
                   <tr key={i}>
                     <td className="font-mono">{t.ticker || "—"}</td>
@@ -88,6 +95,12 @@ export function Portfolio() {
                     </td>
                     <td className="text-right font-mono tabular-nums">
                       {t.entry_price != null ? fmt(t.entry_price) : "—"}
+                    </td>
+                    <td className="text-right font-mono tabular-nums">
+                      {t.mark != null ? fmt(t.mark) : "—"}
+                    </td>
+                    <td className={`text-right font-mono tabular-nums ${pnlColor(t.unrealised_pnl ?? 0)}`}>
+                      {t.unrealised_pnl != null ? fmtDollar(t.unrealised_pnl) : "—"}
                     </td>
                     <td className="max-w-0 truncate font-mono text-[10px] text-muted-foreground">{t.run}</td>
                   </tr>
