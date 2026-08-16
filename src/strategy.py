@@ -290,6 +290,13 @@ def _load_strategy_dir(strategies: dict, strat_dir: str, label: str) -> None:
                     strategies[attr.name] = attr
         except Exception as e:
             print(f"warning: failed to load strategy file {fname}: {e}", file=sys.stderr)
+            # The engine/ package was renamed to src/ in 0.3.1. Installed
+            # copies from before that still import `engine.*` and fail here,
+            # which otherwise just looks like the strategy vanished.
+            if isinstance(e, ModuleNotFoundError) and e.name == "engine":
+                print("         this copy predates the engine/ → src/ rename — "
+                      "run `moneymaker upgrade-strategies` to refresh it.",
+                      file=sys.stderr)
 
 
 def load_strategies(home: str) -> dict[str, type[Strategy]]:
