@@ -43,12 +43,13 @@ export function TopBar({
       </div>
 
       {/* Live account context — the reason this bar exists. */}
-      <div className="flex min-w-0 flex-1 items-center gap-4 overflow-x-auto sm:gap-6">
+      <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-6">
         <Metric label="Equity" value={stats ? fmtDollar(stats.total_balance) : "—"} />
         <Metric label="P&L" value={stats ? fmtDollar(stats.total_pnl) : "—"}
                 tone={stats ? pnlColor(stats.total_pnl) : undefined} />
-        <Metric label="Win" value={stats?.win_rate != null ? fmtPct(stats.win_rate) : "—"} />
-        <Metric label="Trades" value={stats ? String(stats.trades) : "—"} className="hidden sm:flex" />
+        <Metric label="Win" value={stats?.win_rate != null ? fmtPct(stats.win_rate) : "—"}
+                className="hidden min-[560px]:flex" />
+        <Metric label="Trades" value={stats ? String(stats.trades) : "—"} className="hidden min-[720px]:flex" />
       </div>
 
       <button

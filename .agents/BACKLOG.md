@@ -232,3 +232,9 @@ Research, Accounts, Trade and the Dashboard all use Panel/Stat/DataTable now,
 so no page still shows the old floating-card treatment. Accounts and sessions
 render as tables; duplicated header lines were folded into panel titles and
 actions.
+
+### Strategy list folded into one panel (DONE 2026-08-16)
+Rows were individual floating cards with gaps between them; they are now
+divided rows inside a single panel, matching every other list in the app.
+Expanded content flows inline on a tinted ground rather than inside a nested
+card. TopBar metrics drop out at breakpoints rather than clipping mid-digit.

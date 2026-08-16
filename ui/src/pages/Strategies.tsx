@@ -5,6 +5,7 @@ import { Zap, ChevronDown, Play, Loader2, Layers, SlidersHorizontal, RotateCcw,
 import { AnimatedIcon, MotionHost } from "@/components/ui/animated-icon";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Panel } from "@/components/terminal/Panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -117,8 +118,9 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
   }
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <Card className="elevated overflow-hidden">
+    <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                className="border-b last:border-b-0">
+      <div>
         <button
           onClick={() => setOpen((v) => !v)}
           className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30"
@@ -153,7 +155,7 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
               transition={{ duration: 0.25 }}
               style={{ overflow: "hidden" }}
             >
-              <CardContent className="space-y-4 border-t pt-4">
+              <div className="space-y-4 border-t bg-muted/10 p-3">
                 <StrategyFlow strategyName={s.name} params={s.params} />
 
                 {/* mode switch */}
@@ -317,11 +319,11 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
                     )}
                   </motion.div>
                 )}
-              </CardContent>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
-      </Card>
+      </div>
     </motion.div>
   );
 }
@@ -419,9 +421,7 @@ export function Strategies() {
       <div className="page-header justify-between">
         <div>
           <h1 className="text-[15px] font-semibold tracking-tight">Strategies</h1>
-          <p className="text-sm text-muted-foreground">
-            {strategies.length} available · expand one to tune parameters and backtest.
-          </p>
+
         </div>
         <div className="flex w-full items-center gap-2 sm:w-auto">
           <Input value={query} onChange={(e) => setQuery(e.target.value)}
@@ -438,9 +438,9 @@ export function Strategies() {
       ) : filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground">No strategies match “{query}”.</p>
       ) : (
-        <div className="space-y-2">
+        <Panel dense title={`${filtered.length} of ${strategies.length} strategies`}>
           {filtered.map((s) => <StrategyCard key={s.name} s={s} config={config} />)}
-        </div>
+        </Panel>
       )}
     </div>
   );
