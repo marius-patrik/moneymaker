@@ -5,10 +5,11 @@ import {
   TrendingUp, TrendingDown, Activity, Wallet, FileText, Zap,
   Target, Scale, ArrowRight, Loader2, CandlestickChart, FlaskConical,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AnimatedIcon, MotionHost } from "@/components/ui/animated-icon";
-import { api, type LiveStatus, type AppConfig, type Stats, type SessionEntry } from "@/lib/api";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import { api, type LiveStatus, type AppConfig, type Stats, type SessionEntry, type EquityPoint } from "@/lib/api";
 import { fmtDollar, fmtPct, pnlColor } from "@/lib/utils";
 
 const fadeUp = {
@@ -23,14 +24,19 @@ function StatCard({ title, value, sub, icon, i, color, motionType = "pulse" }: {
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" custom={i}>
       <MotionHost>
-        <Card className="transition-colors hover:bg-accent/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">{title}</CardTitle>
-            <AnimatedIcon icon={icon} motionType={motionType} className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-xl font-bold tabular-nums sm:text-2xl ${color ?? ""}`}>{value}</div>
-            {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
+        <Card className="elevated h-full transition-colors hover:bg-accent/25">
+          <CardContent className="space-y-1.5 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                {title}
+              </span>
+              <AnimatedIcon icon={icon} motionType={motionType}
+                            className="h-3.5 w-3.5 text-muted-foreground/70" />
+            </div>
+            <div className={`text-[1.65rem] font-semibold leading-none tabular-nums tracking-tight ${color ?? ""}`}>
+              {value}
+            </div>
+            {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
           </CardContent>
         </Card>
       </MotionHost>
@@ -44,12 +50,14 @@ export function Dashboard() {
   const [liveIds, setLiveIds] = useState<string[]>([]);
   const [liveStatuses, setLiveStatuses] = useState<Record<string, LiveStatus>>({});
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
+  const [equity, setEquity] = useState<EquityPoint[]>([]);
 
   useEffect(() => {
     api.stats.get().then(setStats).catch(() => {});
     api.config.get().then(setConfig).catch(() => {});
     api.live.list().then((r) => setLiveIds(r.session_ids)).catch(() => {});
     api.sessions.list().then((r) => setSessions(r.sessions)).catch(() => {});
+    api.stats.equity().then((r) => setEquity(r.points)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -71,16 +79,16 @@ export function Dashboard() {
   const pnl = stats.total_pnl;
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="space-y-5 p-4 pb-10 sm:p-6 sm:pb-12">
+      <div className="page-header">
+        <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-xs text-muted-foreground">
           {config ? `v${config.version} · ${stats.strategies} strategies · ${stats.sessions} sessions` : " "}
         </p>
       </div>
 
       {/* headline */}
-      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard i={0} title="Total P&L" icon={pnl >= 0 ? TrendingUp : TrendingDown}
                   motionType="draw" value={fmtDollar(pnl)} color={pnlColor(pnl)}
                   sub={`across ${stats.trades} trades`} />
@@ -98,7 +106,7 @@ export function Dashboard() {
       </div>
 
       {/* trade quality */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard i={4} title="Avg win" icon={TrendingUp} value={fmtDollar(stats.avg_win)} color="text-profit" />
         <StatCard i={5} title="Avg loss" icon={TrendingDown} value={fmtDollar(stats.avg_loss)} color="text-loss" />
         <StatCard i={6} title="Best trade" icon={TrendingUp} color="text-profit"
@@ -107,10 +115,60 @@ export function Dashboard() {
                   value={stats.worst_trade != null ? fmtDollar(stats.worst_trade) : "—"} />
       </div>
 
+      {/* equity curve — the account's whole history as one line */}
+      {equity.length > 1 && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 }}>
+          <Card className="elevated">
+            <CardContent className="space-y-3 p-4">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  Equity curve
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {equity.length} points · {stats.trades} trades
+                </span>
+              </div>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={equity} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="eq" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={pnl >= 0 ? "hsl(var(--profit))" : "hsl(var(--loss))"}
+                              stopOpacity={0.28} />
+                        <stop offset="100%" stopColor={pnl >= 0 ? "hsl(var(--profit))" : "hsl(var(--loss))"}
+                              stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="i" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                           axisLine={false} tickLine={false} minTickGap={40} />
+                    <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                           axisLine={false} tickLine={false} width={54}
+                           tickFormatter={(v: number) => `$${Math.round(v / 1000)}k`} />
+                    <ReferenceLine y={0} stroke="hsl(var(--border))" strokeDasharray="3 3" />
+                    <Tooltip
+                      formatter={(v: number) => [fmtDollar(v), "Equity"]}
+                      labelFormatter={(_, pl) => (pl?.[0]?.payload as EquityPoint)?.t ?? ""}
+                      contentStyle={{
+                        background: "hsl(var(--popover))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 12, fontSize: 12,
+                      }} />
+                    <Area type="monotone" dataKey="equity"
+                          stroke={pnl >= 0 ? "hsl(var(--profit))" : "hsl(var(--loss))"}
+                          strokeWidth={1.75} fill="url(#eq)" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
       {/* live */}
       {liveIds.length > 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-          <h2 className="mb-3 text-lg font-semibold">Open positions</h2>
+          <h2 className="mb-2.5 text-sm font-semibold tracking-tight">Open positions</h2>
           <div className="space-y-2">
             {liveIds.map((id) => {
               const st = liveStatuses[id];
@@ -140,7 +198,7 @@ export function Dashboard() {
       {sessions.length > 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Recent sessions</h2>
+            <h2 className="text-sm font-semibold tracking-tight">Recent sessions</h2>
             <Link to="/accounts" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
               View all <ArrowRight className="h-3 w-3" />
             </Link>

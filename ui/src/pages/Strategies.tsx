@@ -410,9 +410,9 @@ export function Strategies() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="page-header flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Strategies</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Strategies</h1>
           <p className="text-sm text-muted-foreground">
             {strategies.length} available · expand one to tune parameters and backtest.
           </p>

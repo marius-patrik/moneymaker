@@ -337,6 +337,7 @@ POST /api/evolve          {strategy, ticker, windows, generations?}    → Job
 GET  /api/rankings
 GET  /api/jobs                 GET /api/jobs/<id>   POST /api/jobs/<id>/cancel
 GET  /api/stats                aggregate P&L, win rate, profit factor
+GET  /api/equity               cumulative P&L across every session
 POST /api/orders          {ticker, direction, size, account_id?}  — manual order
 GET  /api/quote/<ticker>       last price
 POST /api/strategies      {name, source?, overwrite?}  — create a strategy
@@ -405,6 +406,11 @@ Pages: **Dashboard** (accounts, balances, live sessions), **Strategies**
 tab for background work), **Live** (start/stop/monitor sessions, polls every
 3s), **Sessions** (trade tables with cumulative P&L charts), **Accounts**
 (create, search, delete, prune).
+
+Surfaces are layered rather than flat: the page carries a soft ambient wash,
+cards lift above it, and chrome that content scrolls beneath — the sidebar and
+each page's sticky header — is frosted glass. Only P&L figures carry colour;
+everything else is neutral.
 
 The layout is mobile-first and responsive — one implementation, not a
 separate mobile build. Below the `md` breakpoint the sidebar becomes a

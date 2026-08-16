@@ -387,7 +387,9 @@ function SessionsPanel() {
 export function Accounts() {
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <h1 className="text-2xl font-bold">Accounts</h1>
+      <div className="page-header">
+        <h1 className="text-xl font-semibold tracking-tight">Accounts</h1>
+      </div>
       <Tabs defaultValue="accounts">
         <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="accounts">Accounts</TabsTrigger>

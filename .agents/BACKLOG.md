@@ -181,3 +181,19 @@ Bugs fixed along the way: balances read `starting_balance` where the record
 stores `balance` (dashboard showed NaN, cards 0 — no data was lost); the
 `popover` colour was defined in CSS but never registered in tailwind.config,
 so every dropdown rendered transparent.
+
+### Visual system rebuild (DONE 2026-08-16)
+Frosted glass only reads as glass when content moves under it, so the
+foundation was rebuilt around layered surfaces: an ambient radial wash on the
+page, cards elevated above it, and sticky per-page headers plus the sidebar
+frosted over the top. Glass classes use @apply so Tailwind emits both
+backdrop-filter spellings — a hand-written one is minified to the -webkit-
+prefix alone and silently stops working.
+
+Also: profit/loss became theme tokens (they were hardcoded and dim against
+dark), radius 0.875rem, elevation with a top highlight in dark, tabular
+figures, uppercase metric labels, an equity-curve chart on the dashboard
+(GET /api/equity), and denser metric cards.
+
+Gotcha worth remembering: a component-layer class loses to a utility class,
+so `.metric-label` on a `CardTitle` was overridden by its `text-2xl`.

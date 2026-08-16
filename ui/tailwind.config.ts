@@ -41,8 +41,8 @@ export default {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",
         },
-        profit: "hsl(142 76% 36%)",
-        loss: "hsl(0 84% 60%)",
+        profit: "hsl(var(--profit))",
+        loss: "hsl(var(--loss))",
       },
       borderRadius: {
         lg: "var(--radius)",

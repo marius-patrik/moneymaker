@@ -98,7 +98,7 @@ function OrderTicket({ accounts }: { accounts: Account[] }) {
         {/* quote strip */}
         <div className="flex items-center justify-between rounded-lg border p-3">
           <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Last price</div>
+            <div className="metric-label">Last price</div>
             <div className="font-mono text-lg font-bold tabular-nums">
               {quote ? fmt(quote.price) : "—"}
             </div>
@@ -286,7 +286,7 @@ function PositionCard({ id, onStopped }: { id: string; onStopped: () => void }) 
                 { l: "Win rate", v: s.win_rate != null ? fmtPct(s.win_rate) : "—" },
               ].map(({ l, v, c }) => (
                 <div key={l}>
-                  <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{l}</div>
+                  <div className="metric-label">{l}</div>
                   <div className={`text-sm font-semibold tabular-nums ${c ?? ""}`}>{v}</div>
                 </div>
               ))}
@@ -301,7 +301,7 @@ function PositionCard({ id, onStopped }: { id: string; onStopped: () => void }) 
                   { l: "Target", v: s.target_price != null ? fmt(s.target_price) : "—" },
                 ].map(({ l, v }) => (
                   <div key={l}>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{l}</div>
+                    <div className="metric-label">{l}</div>
                     <div className="font-mono text-sm tabular-nums">{v}</div>
                   </div>
                 ))}
@@ -337,9 +337,9 @@ export function Trade() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="page-header flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Trade</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Trade</h1>
           <p className="text-sm text-muted-foreground">
             {ids.length === 0 ? "Nothing running" : `${ids.length} session${ids.length === 1 ? "" : "s"} running`}
           </p>

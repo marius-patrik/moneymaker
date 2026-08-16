@@ -413,8 +413,8 @@ export function Research() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-bold">Research</h1>
+      <div className="page-header">
+        <h1 className="text-xl font-semibold tracking-tight">Research</h1>
         <p className="text-sm text-muted-foreground">
           Compare strategy variants, evolve parameters, and review accumulated rankings.
         </p>

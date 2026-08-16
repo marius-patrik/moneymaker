@@ -2,93 +2,162 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===========================================================================
+   Design tokens
+
+   Surfaces are layered rather than flat: the page sits at --background, cards
+   lift to --card, and chrome that floats over content (sidebar, sticky
+   headers, dialogs) is translucent so what is beneath shows through blurred.
+   That layering is what makes frosting legible — a translucent panel over a
+   flat field of the same colour just looks opaque.
+   =========================================================================== */
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 224 71.4% 4.1%;
+    --background: 0 0% 97.5%;
+    --foreground: 0 0% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 224 71.4% 4.1%;
+    --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 224 71.4% 4.1%;
-    --primary: 220.9 39.3% 11%;
-    --primary-foreground: 210 20% 98%;
-    --secondary: 220 14.3% 95.9%;
-    --secondary-foreground: 220.9 39.3% 11%;
-    --muted: 220 14.3% 95.9%;
-    --muted-foreground: 220 8.9% 46.1%;
-    --accent: 220 14.3% 95.9%;
-    --accent-foreground: 220.9 39.3% 11%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 224 71.4% 4.1%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 94%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 42%;
+    --accent: 0 0% 93%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89%;
+    --input: 0 0% 89%;
+    --ring: 0 0% 45%;
     --radius: 0.875rem;
+
+    /* Ambient wash behind everything, so translucent chrome has depth to
+       pick up rather than one flat tone. */
+    --ambient-1: 0 0% 100%;
+    --ambient-2: 0 0% 94%;
+
+    /* Semantic data colours — the only hues in the interface. */
+    --profit: 142 68% 32%;
+    --loss: 0 72% 46%;
   }
 
-  /* Neutral dark: hue/saturation held at 0 so surfaces read as black and
-     grey rather than blue. Only the semantic accents (destructive, profit,
-     loss) carry colour. */
+  /* Neutral dark: hue and saturation held at 0 so surfaces read as black and
+     grey. Only the semantic data colours carry hue. */
   .dark {
-    --background: 0 0% 3.5%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 6.5%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 6.5%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 64%;
-    --accent: 0 0% 17%;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 7.5%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 0% 96%;
+    --primary-foreground: 0 0% 8%;
+    --secondary: 0 0% 14%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 13%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 16%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 62% 42%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 16%;
-    --input: 0 0% 16%;
-    --ring: 0 0% 83%;
+    --border: 0 0% 15%;
+    --input: 0 0% 17%;
+    --ring: 0 0% 70%;
+
+    --ambient-1: 0 0% 9%;
+    --ambient-2: 0 0% 2%;
+
+    /* Lifted for legibility against a dark field. */
+    --profit: 142 60% 50%;
+    --loss: 0 74% 60%;
   }
 }
 
 @layer base {
   * { @apply border-border; }
-  body { @apply bg-background text-foreground; font-feature-settings: "rlig" 1, "calt" 1; }
-}
 
-/* React Flow overrides for dark mode */
-.react-flow__background { background: transparent !important; }
-.react-flow__edge-path { stroke: hsl(var(--border)) !important; }
-.react-flow__edge-path.animated { animation: dashdraw 0.5s linear infinite; }
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    letter-spacing: -0.011em;
+    /* Two soft pools of light — subtle enough to read as depth rather than
+       decoration, and the reason frosted panels have anything to blur. */
+    background-image:
+      radial-gradient(55rem 55rem at 12% -12%, hsl(var(--ambient-1) / 0.75), transparent 60%),
+      radial-gradient(45rem 45rem at 98% 2%, hsl(var(--ambient-2) / 0.65), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  /* Figures line up in columns and stop jittering as they tick. */
+  .tabular-nums, table, [data-numeric] { font-variant-numeric: tabular-nums; }
+
+  ::selection { background: hsl(var(--foreground) / 0.15); }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.6);
+    outline-offset: 2px;
+  }
+}
 
 @layer components {
-/* ---------------------------------------------------------------------
-   Surface treatment
-   Frosted panels for chrome that floats over content (sidebar, drawer,
-   dialogs, menus). backdrop-filter needs a translucent background to have
-   anything to blur, hence the /75 alpha rather than a solid token.
-   --------------------------------------------------------------------- */
-/* @apply so Tailwind emits its own backdrop utilities — hand-written
-   backdrop-filter got minified down to the -webkit- prefix alone. */
-.glass {
-  @apply bg-card/70 backdrop-blur-xl backdrop-saturate-150;
+  /* -----------------------------------------------------------------
+     Frosted surfaces. @apply so Tailwind emits its own backdrop
+     utilities — a hand-written backdrop-filter gets minified down to
+     the -webkit- prefix alone and silently stops working.
+     ----------------------------------------------------------------- */
+
+  /* Chrome that content scrolls beneath: sidebar, sticky headers. */
+  .glass { @apply bg-card/55 backdrop-blur-2xl backdrop-saturate-150; }
+
+  /* Menus, dialogs, toasts — must stay legible over anything. */
+  .glass-strong { @apply bg-popover/85 backdrop-blur-2xl backdrop-saturate-150; }
+
+  /* A sticky page header. Content passing underneath is what sells the
+     frosting, so every page puts its title bar in one. */
+  .page-header {
+    @apply glass sticky top-0 z-30 -mx-4 -mt-4 mb-5 border-b px-4 py-3.5 sm:-mx-6 sm:-mt-6 sm:px-6;
+  }
+
+  /* Elevation: a whisper of shadow plus a top highlight, the way a real
+     panel catches light. */
+  .elevated {
+    box-shadow: 0 1px 2px -1px hsl(0 0% 0% / 0.10),
+                0 4px 16px -6px hsl(0 0% 0% / 0.10);
+  }
+  .dark .elevated {
+    box-shadow: 0 1px 2px -1px hsl(0 0% 0% / 0.6),
+                0 8px 28px -12px hsl(0 0% 0% / 0.7),
+                inset 0 1px 0 0 hsl(0 0% 100% / 0.04);
+  }
+
+  /* Small uppercase label above a figure — the standard financial pairing. */
+  .metric-label {
+    @apply text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground;
+  }
+  .metric-value { @apply text-2xl font-semibold tabular-nums tracking-tight; }
+
+  /* A live indicator that actually reads as live. */
+  .live-dot { @apply relative inline-flex h-2 w-2 rounded-full bg-profit; }
+  .live-dot::after {
+    content: "";
+    @apply absolute inset-0 rounded-full bg-profit;
+    animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
 }
 
-/* Menus and popovers must stay legible over arbitrary content, so they get
-   a heavier base than the sidebar. */
-.glass-strong {
-  @apply bg-popover/90 backdrop-blur-2xl backdrop-saturate-150;
-}
-}
+@keyframes ping { 75%, 100% { transform: scale(2.4); opacity: 0; } }
 
-/* Numeric columns line up when digits share a width. */
-.tabular-nums { font-variant-numeric: tabular-nums; }
-
-/* Slightly tighter, more "terminal" feel for dense financial text. */
-body { letter-spacing: -0.006em; }
-
-/* Scrollbars: visible enough to grab, quiet enough to ignore. */
+/* Scrollbars: findable when you need them, invisible when you do not. */
 * { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
@@ -98,4 +167,16 @@ body { letter-spacing: -0.006em; }
   border: 3px solid transparent;
   background-clip: content-box;
 }
-*::-webkit-scrollbar-thumb:hover { background-color: hsl(var(--muted-foreground) / 0.5); }
+*::-webkit-scrollbar-thumb:hover { background-color: hsl(var(--muted-foreground) / 0.45); }
+
+/* React Flow inherits the app palette rather than its own defaults. */
+.react-flow__background { background: transparent !important; }
+.react-flow__edge-path { stroke: hsl(var(--border)) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

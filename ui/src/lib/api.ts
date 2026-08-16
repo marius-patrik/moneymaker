@@ -75,6 +75,12 @@ export interface SessionEntry {
   last_trade?: string | null;
 }
 
+export interface EquityPoint {
+  i: number;
+  t: string;
+  equity: number;
+}
+
 export interface Stats {
   sessions: number;
   accounts: number;
@@ -219,6 +225,7 @@ export const api = {
   },
   stats: {
     get: () => get<Stats>("/stats"),
+    equity: () => get<{ points: EquityPoint[]; trades: number; final: number }>("/equity"),
   },
   config: {
     get: () => get<AppConfig>("/config"),

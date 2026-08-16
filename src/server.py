@@ -758,6 +758,41 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             "overridden_by": home_source() if overridden else None,
         }
 
+    @api.get("/equity")
+    def get_equity(limit: int = 500):
+        """
+        Cumulative P&L over time across every recorded session.
+
+        Trades are pooled from all session logs and ordered by exit time, so
+        the curve reads as one continuous account history rather than a set
+        of disconnected runs.
+        """
+        sess_dir = pathlib.Path(state.home) / "sessions"
+        trades: list[tuple[str, float]] = []
+        if sess_dir.is_dir():
+            for path in sess_dir.glob("*.csv"):
+                try:
+                    with open(path) as f:
+                        for r in csv.DictReader(f):
+                            raw, when = r.get("pnl"), (r.get("exit_time") or r.get("entry_time"))
+                            if raw in (None, "") or not when:
+                                continue
+                            trades.append((when, float(raw)))
+                except (OSError, ValueError):
+                    continue
+
+        trades.sort(key=lambda t: t[0])
+        # Long histories are downsampled so the payload stays small; the
+        # shape of the curve survives, which is all the chart needs.
+        step = max(1, len(trades) // limit)
+        points, running = [], 0.0
+        for i, (when, pnl) in enumerate(trades):
+            running += pnl
+            if i % step == 0 or i == len(trades) - 1:
+                points.append({"i": i + 1, "t": when[:19], "equity": round(running, 2)})
+        return {"points": points, "trades": len(trades),
+                "final": round(running, 2)}
+
     @api.get("/stats")
     def get_stats():
         """
