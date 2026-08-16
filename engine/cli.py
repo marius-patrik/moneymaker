@@ -24,6 +24,41 @@ from engine.risk import RiskManager
 from engine.strategy import BUILTIN_STRATEGIES, load_strategies
 
 
+def _parse_param_overrides(param_list: list[str], strategy_cls) -> dict:
+    """Parse ['key=value', ...] into typed dict using the strategy's signature."""
+    import inspect as _inspect
+    sig = _inspect.signature(strategy_cls.__init__)
+    defaults = {
+        name: param.default
+        for name, param in sig.parameters.items()
+        if name != "self" and param.default is not _inspect.Parameter.empty
+    }
+    result = {}
+    for item in (param_list or []):
+        if "=" not in item:
+            print(f"--param must be key=value, got: {item!r}", file=sys.stderr)
+            sys.exit(1)
+        key, raw = item.split("=", 1)
+        if key not in defaults:
+            print(f"Unknown param '{key}' for strategy {strategy_cls.name}. "
+                  f"Valid: {list(defaults)}", file=sys.stderr)
+            sys.exit(1)
+        default_val = defaults[key]
+        try:
+            if isinstance(default_val, bool):
+                result[key] = raw.lower() in ("1", "true", "yes")
+            elif isinstance(default_val, float):
+                result[key] = float(raw)
+            elif isinstance(default_val, int):
+                result[key] = int(raw)
+            else:
+                result[key] = raw
+        except ValueError:
+            print(f"Could not parse --param {key}={raw!r} as {type(default_val).__name__}", file=sys.stderr)
+            sys.exit(1)
+    return result
+
+
 # --------------------------------------------------------------------------
 # strategies / providers
 # --------------------------------------------------------------------------
@@ -141,9 +176,10 @@ def cmd_backtest(args):
     if not strategy_cls:
         print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
         sys.exit(1)
+    overrides = _parse_param_overrides(getattr(args, "param", None) or [], strategy_cls)
     feed = DataFeed(home)
     df = feed.get_historical(args.ticker, args.start, args.end, interval=args.interval)
-    strategy = strategy_cls()
+    strategy = strategy_cls.from_params({**strategy_cls.params(), **overrides}) if overrides else strategy_cls()
     provider = make_provider(args.provider, home)
     account_id = _resolve_account(home, provider, args)
     risk = RiskManager(risk_pct=args.risk_pct)
@@ -160,7 +196,8 @@ def cmd_live(args):
     if not strategy_cls:
         print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
         sys.exit(1)
-    strategy = strategy_cls()
+    overrides = _parse_param_overrides(getattr(args, "param", None) or [], strategy_cls)
+    strategy = strategy_cls.from_params({**strategy_cls.params(), **overrides}) if overrides else strategy_cls()
     provider = make_provider(args.provider, home)
     account_id = _resolve_account(home, provider, args)
     risk = RiskManager(risk_pct=args.risk_pct)
@@ -315,6 +352,104 @@ def cmd_optimize(args):
 
 
 # --------------------------------------------------------------------------
+# fork-eval / evolve
+# --------------------------------------------------------------------------
+
+def cmd_fork_eval(args):
+    from engine.agents.forker import fork_and_eval
+    home = get_home(args.data_dir)
+    strategies = load_strategies(home)
+    strategy_cls = strategies.get(args.strategy)
+    if not strategy_cls:
+        print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        windows = _parse_windows(args.windows)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+    raw_forks = strategy_cls.FORKS
+    if not raw_forks:
+        print(f"Strategy '{args.strategy}' declares no FORKS. "
+              f"Add a FORKS class variable to define variants to compare.", file=sys.stderr)
+        sys.exit(1)
+
+    # Resolve strategy name strings to classes
+    forks = []
+    for label, strat_name, params in raw_forks:
+        cls = strategies.get(strat_name)
+        if not cls:
+            print(f"Fork '{label}' references unknown strategy '{strat_name}'. "
+                  f"Available: {list(strategies)}", file=sys.stderr)
+            sys.exit(1)
+        forks.append((label, cls, params))
+
+    print(f"Fork-eval: {len(forks)} variant(s) of '{args.strategy}' "
+          f"across {len(windows)} window(s)...")
+    result = fork_and_eval(
+        forks, args.provider, home, args.ticker, windows,
+        interval=args.interval, account_balance=args.account,
+        risk_pct=args.risk_pct,
+    )
+    print(f"\n{'Rank':<5} {'Name':<40} {'Score':>8} {'Trades':>8} {'Win%':>7} {'P&L':>12}")
+    print("-" * 82)
+    for i, fr in enumerate(result.ranked(), 1):
+        s = fr.summary
+        print(f"{i:<5} {fr.name:<40} {fr.score:>+8.2f} "
+              f"{s.get('total_trades', 0):>8} "
+              f"{s.get('overall_win_rate', 0):>6.1%} "
+              f"{s.get('total_pnl', 0):>12.2f}")
+    if result.winner:
+        print(f"\nWinner: {result.winner.name}  params={result.winner.params}")
+
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(home, "sessions", f"fork_eval_{args.strategy}_{ts}.json")
+    with open(out_path, "w") as f:
+        json.dump(result.to_dict(), f, indent=2, default=str)
+    print(f"Full results written to {out_path}")
+
+
+def cmd_evolve(args):
+    from engine.agents.evolution import evolve
+    home = get_home(args.data_dir)
+    strategies = load_strategies(home)
+    strategy_cls = strategies.get(args.strategy)
+    if not strategy_cls:
+        print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        windows = _parse_windows(args.windows)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+    start_params = dict(strategy_cls.params())
+    if args.param:
+        overrides = _parse_param_overrides(args.param, strategy_cls)
+        start_params.update(overrides)
+
+    print(f"Evolving '{args.strategy}' for up to {args.generations} generation(s) "
+          f"across {len(windows)} window(s)...")
+    result = evolve(
+        strategy_cls=strategy_cls, provider_name=args.provider, home=home,
+        ticker=args.ticker, windows=windows, start_params=start_params,
+        max_generations=args.generations, perturbation_pct=args.perturbation,
+        interval=args.interval, account_balance=args.account, risk_pct=args.risk_pct,
+        verbose=True,
+    )
+    print(f"\nEvolution complete. Ran {result.generations_run} generation(s).")
+    print(f"Best score: {result.best_score:+.2f}")
+    print(f"Best params: {result.best_params}")
+
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(home, "sessions", f"evolve_{args.strategy}_{ts}.json")
+    with open(out_path, "w") as f:
+        json.dump(result.to_dict(), f, indent=2, default=str)
+    print(f"Full results written to {out_path}")
+
+
+# --------------------------------------------------------------------------
 # strategy install / upgrade
 # --------------------------------------------------------------------------
 
@@ -415,6 +550,8 @@ def main():
     p_back.add_argument("--account-id", default=None, help="Use a specific existing account instead of auto-selecting")
     p_back.add_argument("--risk-pct", type=float, default=0.01)
     p_back.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_back.add_argument("--param", action="append", metavar="KEY=VALUE",
+                        help="Override a strategy parameter, e.g. --param min_spike_pct=0.001. Repeatable.")
     p_back.set_defaults(func=cmd_backtest)
 
     p_live = sub.add_parser("live", help="Run a strategy live against real-time prices (paper only, unless a live provider is wired up).")
@@ -426,6 +563,8 @@ def main():
     p_live.add_argument("--poll-seconds", type=int, default=30)
     p_live.add_argument("--end-time", default="11:00", help="HH:MM local time to stop the session")
     p_live.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_live.add_argument("--param", action="append", metavar="KEY=VALUE",
+                        help="Override a strategy parameter, e.g. --param stop_pct=0.003. Repeatable.")
     p_live.set_defaults(func=cmd_live)
 
     p_log = sub.add_parser("log", help="Print trade log/stats for a past session.")
@@ -460,6 +599,36 @@ def main():
     p_opt.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
     p_opt.add_argument("--top", type=int, default=5, help="How many top candidates to print")
     p_opt.set_defaults(func=cmd_optimize)
+
+    # fork-eval / evolve
+    p_fe = sub.add_parser("fork-eval",
+                          help="Compare strategy FORKS over identical windows and rank by objective score.")
+    p_fe.add_argument("--strategy", required=True)
+    p_fe.add_argument("--ticker", required=True)
+    p_fe.add_argument("--windows", required=True,
+                      help="Comma-separated START:END pairs (same format as backtest-multi)")
+    p_fe.add_argument("--interval", default="5m")
+    p_fe.add_argument("--account", type=float, default=10000.0)
+    p_fe.add_argument("--risk-pct", type=float, default=0.01)
+    p_fe.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_fe.set_defaults(func=cmd_fork_eval)
+
+    p_ev = sub.add_parser("evolve",
+                          help="Hill-climb a strategy's numeric parameters across windows to find a better configuration.")
+    p_ev.add_argument("--strategy", required=True)
+    p_ev.add_argument("--ticker", required=True)
+    p_ev.add_argument("--windows", required=True,
+                      help="Comma-separated START:END pairs (same format as backtest-multi)")
+    p_ev.add_argument("--interval", default="5m")
+    p_ev.add_argument("--account", type=float, default=10000.0)
+    p_ev.add_argument("--risk-pct", type=float, default=0.01)
+    p_ev.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_ev.add_argument("--generations", type=int, default=20, help="Max hill-climbing generations (default 20)")
+    p_ev.add_argument("--perturbation", type=float, default=0.20,
+                      help="Fractional step size for parameter perturbation (default 0.20 = ±20%%)")
+    p_ev.add_argument("--param", action="append", metavar="KEY=VALUE",
+                      help="Override starting parameter values before evolving. Repeatable.")
+    p_ev.set_defaults(func=cmd_evolve)
 
     p_inst = sub.add_parser("install-strategies",
                              help="Copy bundled strategies to the home strategies/ dir (first-time setup).")

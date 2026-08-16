@@ -1,19 +1,33 @@
 """
-Improved data-release strategy: breakout entry with range-based stops.
+Data-release spike-fade strategy: enter AGAINST the spike direction after basing.
 
-Changes from v1:
-  - Entry trigger: wait for a confirmed BREAKOUT of the post-spike basing range
-    rather than entering while price is still basing. Avoids entries that turn
-    into immediate reversals.
-  - Stop placement: derived from the basing range rather than a fixed % from
-    entry. The range is typically 3-5 pts on ES at 5m, so the stop is tight
-    and tied to the actual structure of the setup.
-  - Target: set at `target_rr` × the stop distance (default 2:1), scaling
-    dynamically to each setup rather than a fixed absolute %.
-  - Minimum-surprise gate retained: require the 8:30 spike to clear both an
-    absolute floor and a multiple of that day's own pre-release noise. With
-    5m bars the noise baseline is a single bar (noise ≈ 0), so in practice
-    the gate is the absolute floor alone. Set min_spike_pct to 0.0 to disable.
+Empirical finding (2026-08-16): large ES spikes (>=0.10%) on macro releases
+systematically FADE within 1–2 bars. The initial move overshoots as the market
+digests the release; by the time a post-spike basing window forms, the move is
+exhausted and mean-reverts toward the pre-release baseline.
+
+The continuation strategy (retail_sales_spike_filtered) enters IN the spike
+direction and consistently loses on genuine release days. This strategy enters
+in the OPPOSITE direction, targeting the baseline as the take-profit.
+
+Flow:
+  1-3. Same as retail_sales_spike_filtered: baseline, spike detection, surprise gate.
+  4.   Basing window: wait for N bars of tight consolidation after the spike.
+  5.   Fade entry: once a basing window is confirmed, enter on the FIRST bar that
+       breaks AGAINST the spike direction (i.e. toward the baseline).
+         Long spike  → enter SHORT when bar.price < basing_low
+         Short spike → enter LONG  when bar.price > basing_high
+  6.   Stop: far side of basing range + buffer (assumes the move was not a fade,
+       and price is continuing in the original spike direction past basing).
+  7.   Target: baseline price (the pre-release level the fade is expected to reach).
+  8.   Hard time-box exit regardless.
+
+FORKS = [
+  ("fade", "retail_sales_spike_fade", {default params}),
+  ("continuation", "retail_sales_spike_filtered", {default params}),
+]
+allows `fork-eval --strategy retail_sales_spike_fade` to compare both hypotheses
+over identical windows.
 """
 
 from __future__ import annotations
@@ -23,43 +37,30 @@ import datetime as dt
 from engine.strategy import Bar, Strategy, StrategyContext, reset_session_if_new_day
 
 
-class FilteredDataReleaseStrategy(Strategy):
+class FadeDataReleaseStrategy(Strategy):
     """
-    Data-release strategy with breakout entry and range-based stops.
-
-    Flow:
-      1. Pre-release baseline: average close in the calm window before 8:30.
-      2. Spike window (8:30–8:35): measure the biggest move from baseline.
-      3. Surprise gate: if the spike doesn't clear the absolute floor, stand
-         down for the session (no trade).
-      4. Basing window: accumulate `base_bars` bars after the spike window.
-         Check the range is tight (< base_tolerance_pct). If not, keep waiting
-         for a subsequent tight window before the hard exit.
-      5. Breakout entry: once a tight basing window is established, enter on
-         the FIRST bar that closes outside the basing range in the spike
-         direction.
-      6. Stop: just beyond the far edge of the basing range (+ stop_buffer).
-         Target: stop_distance × target_rr from entry.
-      7. Hard time-box exit at hard_exit_time regardless.
+    Data-release fade strategy: enter against spike direction after basing,
+    targeting the pre-release baseline. Designed for macro releases where
+    the initial move overshoots and quickly reverts.
     """
 
-    name = "retail_sales_spike_filtered"
+    name = "retail_sales_spike_fade"
     max_trades_per_session = 1
 
     FORKS = [
+        ("fade", "retail_sales_spike_fade", {
+            "min_spike_pct": 0.001,
+            "base_bars": 3,
+            "base_tolerance_pct": 0.0010,
+            "stop_buffer": 0.0005,
+            "target_rr": 0.0,  # 0 = use baseline as target
+        }),
         ("continuation", "retail_sales_spike_filtered", {
             "min_spike_pct": 0.001,
             "base_bars": 3,
             "base_tolerance_pct": 0.0010,
             "stop_buffer": 0.0005,
             "target_rr": 2.0,
-        }),
-        ("fade", "retail_sales_spike_fade", {
-            "min_spike_pct": 0.001,
-            "base_bars": 3,
-            "base_tolerance_pct": 0.0010,
-            "stop_buffer": 0.0005,
-            "target_rr": 0.0,
         }),
     ]
 
@@ -71,10 +72,9 @@ class FilteredDataReleaseStrategy(Strategy):
         base_bars: int = 3,
         base_tolerance_pct: float = 0.0010,
         stop_buffer: float = 0.0005,
-        target_rr: float = 2.0,
-        max_entry_slippage_pct: float = 0.003,
+        target_rr: float = 0.0,
         hard_exit_time: dt.time = dt.time(11, 0),
-        min_spike_pct: float = 0.0,
+        min_spike_pct: float = 0.001,
         min_surprise_ratio: float = 0.0,
     ):
         self.release_time = release_time
@@ -84,7 +84,6 @@ class FilteredDataReleaseStrategy(Strategy):
         self.base_tolerance_pct = base_tolerance_pct
         self.stop_buffer = stop_buffer
         self.target_rr = target_rr
-        self.max_entry_slippage_pct = max_entry_slippage_pct
         self.hard_exit_time = hard_exit_time
         self.min_spike_pct = min_spike_pct
         self.min_surprise_ratio = min_surprise_ratio
@@ -152,16 +151,11 @@ class FilteredDataReleaseStrategy(Strategy):
                     "signal_valid": valid,
                     "spike_move_pct": spike_move_pct,
                 })
-                if not valid:
-                    ctx.extra["stand_down_reason"] = (
-                        f"spike={spike_move_pct:.4%} < floor={self.min_spike_pct:.4%} — standing down"
-                    )
 
         if not ctx.extra.get("signal_valid", False):
             return
 
-        # --- Basing window: find the most recent tight window of bars BEFORE
-        #     the current bar (excluding it so the current bar can be the breakout) ---
+        # --- Basing window (excludes current bar so it can be the entry trigger) ---
         past_post_spike = [b for b in ctx.bars if spike_end <= b.time < bar.time]
         if len(past_post_spike) < self.base_bars:
             return
@@ -172,47 +166,46 @@ class FilteredDataReleaseStrategy(Strategy):
             prices = [b.price for b in window]
             rng_pct = (max(prices) - min(prices)) / baseline
             if rng_pct <= self.base_tolerance_pct:
-                basing_window = window  # keep the most recent qualifying window
+                basing_window = window
         if basing_window is None:
-            return  # no tight window yet; keep waiting
+            return
 
         basing_prices = [b.price for b in basing_window]
         basing_high = max(basing_prices)
         basing_low = min(basing_prices)
 
-        # Direction from spike: which way did the 8:30 bar resolve vs baseline.
-        # Noisier than basing direction on tiny spikes, but more reliable when
-        # the spike is meaningful. Tiny spikes are gated by min_spike_pct below.
+        # Direction of original spike
         spike_prices_all = [b.price for b in ctx.bars if release_dt <= b.time < spike_end]
         avg_spike = sum(spike_prices_all) / len(spike_prices_all) if spike_prices_all else baseline
         spike_dir = "long" if avg_spike > baseline else "short"
 
-        # --- Breakout entry: current bar must clear the basing range ---
-        if spike_dir == "long" and bar.price > basing_high:
-            direction = "long"
-        elif spike_dir == "short" and bar.price < basing_low:
+        # --- Fade entry: break AGAINST spike direction ---
+        if spike_dir == "long" and bar.price < basing_low:
             direction = "short"
+        elif spike_dir == "short" and bar.price > basing_high:
+            direction = "long"
         else:
-            return  # basing confirmed but no breakout yet
+            return
 
         entry = bar.price
 
-        # Reject chasing entries: if the current bar has already moved too far
-        # from the basing range edge, the risk/reward is compromised.
-        slippage_pct = abs(entry - (basing_high if direction == "long" else basing_low)) / baseline
-        if slippage_pct > self.max_entry_slippage_pct:
-            return
-
-        # Stop: far side of the basing range + buffer
-        # Target: stop_distance × target_rr from entry
-        if direction == "long":
-            ctx.stop_price = basing_low * (1 - self.stop_buffer)
-            stop_dist = entry - ctx.stop_price
-            ctx.target_price = entry + stop_dist * self.target_rr
-        else:
+        # Stop: far side of basing range + buffer (price resuming spike = stop out)
+        if direction == "short":
             ctx.stop_price = basing_high * (1 + self.stop_buffer)
             stop_dist = ctx.stop_price - entry
-            ctx.target_price = entry - stop_dist * self.target_rr
+        else:
+            ctx.stop_price = basing_low * (1 - self.stop_buffer)
+            stop_dist = entry - ctx.stop_price
+
+        # Target: baseline (expected reversion level)
+        # If target_rr > 0, use RR multiple instead; target_rr=0 means use baseline
+        if self.target_rr > 0:
+            if direction == "short":
+                ctx.target_price = entry - stop_dist * self.target_rr
+            else:
+                ctx.target_price = entry + stop_dist * self.target_rr
+        else:
+            ctx.target_price = baseline
 
         ctx.position_open = True
         ctx.entry_price = entry
@@ -220,8 +213,9 @@ class FilteredDataReleaseStrategy(Strategy):
         ctx.direction = direction
         ctx.trades_taken += 1
         ctx.extra["entry_reason"] = (
-            f"breakout {direction} past basing [{basing_low:.2f}–{basing_high:.2f}] "
-            f"after {ctx.extra.get('spike_move_pct', 0):.3%} spike, baseline={baseline:.2f}"
+            f"fade {direction} below basing [{basing_low:.2f}–{basing_high:.2f}] "
+            f"after {ctx.extra.get('spike_move_pct', 0):.3%} {spike_dir} spike, "
+            f"baseline={baseline:.2f} (target)"
         )
-        ctx.extra["basing_range_pct"] = (basing_high - basing_low) / baseline
+        ctx.extra["baseline"] = baseline
         ctx.extra["stop_dist_pct"] = stop_dist / entry

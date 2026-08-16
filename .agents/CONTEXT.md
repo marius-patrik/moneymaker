@@ -276,6 +276,56 @@ prints a notice to stderr if the package was upgraded since last run.
 **QUESTIONS.md Q2 resolved:** merge strategy is context-dependent — skip modified
 files, report conflicts, let user decide per conflict.
 
+## Session: agent capabilities + fork system + fade strategy (2026-08-16, Phase 4)
+
+**Docs reorganized:** all agent-facing docs (AGENTS.md, PLAN.md, CONTEXT.md, BACKLOG.md,
+PROPOSALS.md, QUESTIONS.md, PRD.md, TASKS.md, HANDOFF.md) moved from repo root to
+`.agents/`. README updated to reference new paths. BLOCKERS.md and DEFERRED.md added.
+
+**Strategy.params() / from_params() / FORKS (engine/strategy.py):**
+- `params()` classmethod: returns `{param_name: default}` via `inspect.signature`.
+  Enables machine-readable parameter discovery by agents without reading source.
+- `from_params(dict)` classmethod: instantiates a strategy from a params dict,
+  ignoring unknown keys. Used by fork-eval and evolve factory functions.
+- `FORKS: list[tuple[str, str, dict]]`: class variable listing strategy variants to
+  compare via fork-eval. Format is `(label, strategy_name, params_dict)` — strategy
+  names (strings) resolved at eval time via `load_strategies`, no import cycles.
+
+**engine/agents/ (new package):**
+- `forker.py`: `fork_and_eval(forks, ...) → ForkSetResult`. Runs N (name, cls, params)
+  triples over identical windows, ranks by `default_objective`, returns sorted
+  ForkSetResult with `.winner` pointing to the top-scoring fork.
+- `evolution.py`: `evolve(strategy_cls, ...) → EvolutionResult`. Hill-climbs numeric
+  parameters: perturbs each ±perturbation_pct per generation, keeps improvements.
+  Converges when no single perturbation helps, or max_generations is hit.
+
+**CLI additions:**
+- `--param KEY=VALUE` (repeatable) on `backtest` and `live`: overrides strategy params
+  with type coercion from the strategy's signature defaults (float/int/bool/str).
+- `fork-eval --strategy X --ticker X --windows ...`: resolves FORKS from load_strategies,
+  runs fork_and_eval, prints ranked table + winner. Saves JSON to sessions/.
+- `evolve --strategy X --ticker X --windows ... [--generations N] [--perturbation F]
+  [--param KEY=VALUE]`: hill-climbs numeric params from defaults or overridden start.
+  Saves full step-by-step JSON to sessions/.
+
+**retail_sales_spike_fade.py (new strategy):**
+Enters AGAINST the spike direction after basing, targeting the pre-release baseline.
+Designed for the empirical fade pattern: large ES spikes (≥0.10%) on real macro
+releases revert within 1–2 bars. min_spike_pct defaults to 0.001 (0.10%) — filters
+out noise days.
+
+FORKS wired on both strategies:
+- `retail_sales_spike_fade.FORKS` = [(fade, ...), (continuation, ...)]
+- `retail_sales_spike_filtered.FORKS` = [(continuation, ...), (fade, ...)]
+→ `fork-eval --strategy retail_sales_spike_fade --ticker ES=F --windows ...`
+  will compare both hypotheses over identical windows.
+
+**Tests (tests/test_agents.py):** 12 new tests covering params(), from_params(),
+FORKS declarations, fork_and_eval ranking/winner/to_dict, evolve convergence/to_dict/
+start_params override. All 45 tests pass with Python 3.12.
+
+**Next:** Run fork-eval on real data to validate the fade hypothesis empirically.
+
 ## Ownership handoff
 
 Starting from whenever you (the agent reading this) pick this up: you

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
+import inspect
 import os
 import pathlib
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -41,14 +42,38 @@ class Strategy(ABC):
     price bar (historical or live) and expects it to mutate ctx to
     open/close a position. Keep logic pure price-action so it behaves
     identically in backtest and live modes.
+
+    Class-level FORKS is a list of (name, cls, params_dict) tuples naming
+    alternative implementations for automatic fork-eval. Fork-eval runs all
+    variants over the same windows and ranks by the default objective score.
     """
 
     name: str = "base"
     max_trades_per_session: int = 1
+    # FORKS: list of (label, strategy_name, params_dict) triples declaring
+    # variants to compare via `fork-eval`. Strategy names (strings) are
+    # resolved through load_strategies at eval time — no class import needed.
+    FORKS: list[tuple[str, str, dict[str, Any]]] = []
 
     @abstractmethod
     def on_bar(self, ctx: StrategyContext, bar: Bar) -> None:
         raise NotImplementedError
+
+    @classmethod
+    def params(cls) -> dict[str, Any]:
+        """Return {param_name: default_value} for all __init__ parameters."""
+        sig = inspect.signature(cls.__init__)
+        return {
+            name: param.default
+            for name, param in sig.parameters.items()
+            if name != "self" and param.default is not inspect.Parameter.empty
+        }
+
+    @classmethod
+    def from_params(cls, params: dict[str, Any]) -> "Strategy":
+        """Instantiate this strategy from a params dict (ignores unknown keys)."""
+        valid = set(inspect.signature(cls.__init__).parameters) - {"self"}
+        return cls(**{k: v for k, v in params.items() if k in valid})
 
 
 def reset_session_if_new_day(ctx: StrategyContext, bar: Bar) -> None:

@@ -9,11 +9,11 @@ working provider is `simulated`. Real-broker providers (Trading 212 demo,
 Interactive Brokers paper, OANDA practice) are scaffolded but deliberately
 left as stubs — see "Execution providers" below.
 
-**If you're an agent picking this project up, read `CONTEXT.md`
+**If you're an agent picking this project up, read `.agents/CONTEXT.md`
 first.** It has the design decisions, bugs found and fixed, and what's
 actually been verified vs. not — context that isn't visible from the code
 alone. If you're being handed this as an ongoing takeover rather than a
-one-off task, `HANDOFF.md` has the details of what that means.
+one-off task, `.agents/HANDOFF.md` has the details of what that means.
 
 ## Install
 
@@ -48,14 +48,17 @@ moneymaker log --session <session-name-printed-above>
 ## Project layout
 
 ```
-AGENTS.md           agent/contributor conventions
-HANDOFF.md          ongoing ownership instructions for agents
-CONTEXT.md          chronological session history (append-only)
-PLAN.md             current roadmap and phase status
-BACKLOG.md          longer-horizon items and intelligence-layer plans
-PROPOSALS.md        engine improvement proposals (discuss before implementing)
-QUESTIONS.md        open questions parked for later — no instant answer needed
-PRD.md              product requirements (scope, non-requirements)
+.agents/
+  AGENTS.md           agent/contributor conventions
+  HANDOFF.md          ongoing ownership instructions for agents
+  CONTEXT.md          chronological session history (append-only)
+  PLAN.md             current roadmap and phase status
+  BACKLOG.md          longer-horizon items and intelligence-layer plans
+  PROPOSALS.md        engine improvement proposals (discuss before implementing)
+  QUESTIONS.md        open questions parked for later — no instant answer needed
+  PRD.md              product requirements (scope, non-requirements)
+  BLOCKERS.md         active blockers preventing progress
+  DEFERRED.md         explicitly deferred items with triggers for revisiting
 
 engine/                             Python package (import as `engine.*`)
   config.py          filesystem-first data dir resolution (~/.moneymaker by default)
@@ -70,6 +73,9 @@ engine/                             Python package (import as `engine.*`)
   optimizer.py       grid-search optimizer with train/test split
   server.py          HTTP+JSON API (stdlib only, no extra deps)
   cli.py             argparse CLI entry point (command: `moneymaker`)
+  agents/
+    forker.py        fork_and_eval() — compare N strategy variants over identical windows
+    evolution.py     evolve() — hill-climb numeric params to find better configuration
   providers/
     base.py          ExecutionProvider interface
     simulated.py     the only implemented provider
@@ -79,6 +85,7 @@ engine/                             Python package (import as `engine.*`)
 
 strategies/                         bundled strategies (loaded at runtime)
   retail_sales_spike_filtered.py    data-release breakout with range-based stops
+  retail_sales_spike_fade.py        data-release fade (enter against spike, target baseline)
   momentum_continuation.py          stub — follow spike on large surprises
   opening_range_breakout.py         stub — ORB at 9:30 ET
   vwap_reversion.py                 stub — VWAP mean reversion (needs volume in Bar)
@@ -87,6 +94,8 @@ strategies/                         bundled strategies (loaded at runtime)
 tests/
   test_engine.py                    pytest suite, no network required
   test_multiwindow_optimizer.py     multi-window + optimizer tests
+  test_installer.py                 strategy install/upgrade tests
+  test_agents.py                    fork-eval + evolution tests
 ```
 
 ## Data directory
@@ -147,7 +156,7 @@ moneymaker providers
   paper balances, full parity with the account/credential surface a real
   provider would have.
 - **`trading212_demo`, `ibkr_paper`, `oanda_practice`** — stubs. Each
-  class's docstring in `moneymaker/providers/*.py` documents exactly what
+  class's docstring in `engine/providers/*.py` documents exactly what
   API calls are needed to finish it. They correctly raise
   `NotImplementedError` (after a real credential-presence check) rather
   than silently pretending to trade.
@@ -277,3 +286,41 @@ not a finished, trustworthy strategy.
 
 Both commands are also available via the API server:
 `POST /backtest-multi` and `POST /optimize` (see server section above).
+
+## Per-run parameter overrides
+
+Override any strategy parameter inline without modifying the strategy file:
+
+```
+moneymaker backtest --strategy retail_sales_spike_filtered --ticker "ES=F" \
+    --start 2026-07-01 --end 2026-08-01 \
+    --param min_spike_pct=0.001 --param base_bars=4
+```
+
+Values are coerced to the correct type from the strategy's default signature
+(float, int, bool, or str). Unknown keys are rejected with a helpful error.
+
+## Fork-eval and autonomous evolution
+
+`fork-eval` compares strategy variants (declared in `FORKS`) over identical
+windows and ranks them by the default objective score (mean P&L × consistency
+penalty):
+
+```
+moneymaker fork-eval --strategy retail_sales_spike_fade --ticker "ES=F" \
+    --windows "2026-06-18:2026-08-16"
+```
+
+This compares `retail_sales_spike_fade` against `retail_sales_spike_filtered`
+over the same data and reports the winner empirically.
+
+`evolve` hill-climbs a strategy's numeric parameters to find a locally better
+configuration, logging every improvement:
+
+```
+moneymaker evolve --strategy retail_sales_spike_fade --ticker "ES=F" \
+    --windows "2026-06-18:2026-07-18" \
+    --generations 20 --perturbation 0.20
+```
+
+Both commands save full JSON results to `~/.moneymaker/sessions/`.
