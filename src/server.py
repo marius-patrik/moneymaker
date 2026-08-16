@@ -680,6 +680,30 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         return {"ticker": ticker, "price": price,
                 "time": ts.isoformat() if hasattr(ts, "isoformat") else str(ts)}
 
+    @api.get("/search")
+    def search_instruments(q: str, limit: int = 12):
+        """
+        Instrument search, so a system can be pointed at something without
+        knowing Yahoo's exact symbol for it.
+        """
+        if not q.strip():
+            return {"results": []}
+        try:
+            import yfinance as yf
+            hits = yf.Search(q.strip(), max_results=min(limit, 25)).quotes or []
+        except Exception as e:
+            raise HTTPException(502, f"search unavailable: {e}")
+
+        return {"results": [
+            {
+                "symbol": h.get("symbol"),
+                "name": h.get("shortname") or h.get("longname") or "",
+                "type": (h.get("quoteType") or "").lower(),
+                "exchange": h.get("exchange") or "",
+            }
+            for h in hits if h.get("symbol")
+        ]}
+
     @api.get("/history/{ticker:path}")
     def get_history(ticker: str, interval: str = "5m", days: int = 5,
                     data_provider: str = "yfinance"):
@@ -854,6 +878,63 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
                 points.append({"i": i + 1, "t": when[:19], "equity": round(running, 2)})
         return {"points": points, "trades": len(trades),
                 "final": round(running, 2)}
+
+    @api.get("/pnl-distribution")
+    def get_pnl_distribution(buckets: int = 21):
+        """
+        How P&L is composed: the spread of individual trade outcomes, plus
+        the split between winners and losers.
+
+        A net figure hides whether it came from many small edges or one
+        outlier, which is the difference between a system worth running and
+        one that got lucky.
+        """
+        sess_dir = pathlib.Path(state.home) / "sessions"
+        pnls: list[float] = []
+        if sess_dir.is_dir():
+            for path in sess_dir.glob("*.csv"):
+                try:
+                    with open(path) as f:
+                        for r in csv.DictReader(f):
+                            raw = r.get("pnl")
+                            if raw not in (None, ""):
+                                pnls.append(float(raw))
+                except (OSError, ValueError):
+                    continue
+
+        if not pnls:
+            return {"buckets": [], "wins": 0, "losses": 0,
+                    "gross_win": 0.0, "gross_loss": 0.0, "trades": 0}
+
+        lo, hi = min(pnls), max(pnls)
+        if hi == lo:
+            hi = lo + 1.0
+        n = max(5, min(buckets, 51))
+        width = (hi - lo) / n
+        counts = [0] * n
+        sums = [0.0] * n
+        for v in pnls:
+            i = min(int((v - lo) / width), n - 1)
+            counts[i] += 1
+            sums[i] += v
+
+        wins = [v for v in pnls if v > 0]
+        losses = [v for v in pnls if v < 0]
+        return {
+            "buckets": [
+                {"lo": round(lo + i * width, 2),
+                 "hi": round(lo + (i + 1) * width, 2),
+                 "mid": round(lo + (i + 0.5) * width, 2),
+                 "count": counts[i],
+                 "pnl": round(sums[i], 2)}
+                for i in range(n)
+            ],
+            "trades": len(pnls),
+            "wins": len(wins),
+            "losses": len(losses),
+            "gross_win": round(sum(wins), 2),
+            "gross_loss": round(sum(losses), 2),
+        }
 
     @api.get("/stats")
     def get_stats():

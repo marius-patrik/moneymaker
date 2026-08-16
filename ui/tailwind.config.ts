@@ -5,6 +5,10 @@ export default {
   content: ["./src/**/*.{ts,tsx}", "./index.html"],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Inter Variable"', "Inter", "system-ui", "sans-serif"],
+        mono: ['"JetBrains Mono Variable"', "JetBrains Mono", "ui-monospace", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, CornerDownLeft } from "lucide-react";
-import { NAV } from "@/components/layout/Sidebar";
+import { SECTIONS } from "@/components/terminal/SectionNav";
 import { api, type Strategy } from "@/lib/api";
 
 interface Command {
@@ -36,7 +36,7 @@ export function CommandPalette({
   }, [open]);
 
   const commands: Command[] = useMemo(() => [
-    ...NAV.map((n) => ({
+    ...SECTIONS.map((n: { to: string; label: string }) => ({
       id: `nav:${n.to}`, label: n.label, group: "Go to",
       run: () => { navigate(n.to); onClose(); },
     })),
@@ -44,7 +44,7 @@ export function CommandPalette({
       run: () => { onOpenSettings(); onClose(); } },
     ...strategies.map((s) => ({
       id: `strat:${s.name}`, label: s.name, hint: s.source, group: "Strategies",
-      run: () => { navigate("/strategies"); onClose(); },
+      run: () => { navigate("/workspace"); onClose(); },
     })),
   ], [strategies, navigate, onClose, onOpenSettings]);
 

@@ -88,7 +88,8 @@
 
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss03" 1, "cv05" 1;
+    font-optical-sizing: auto;
     letter-spacing: -0.011em;
     /* Two soft pools of light — subtle enough to read as depth rather than
        decoration, and the reason frosted panels have anything to blur. */

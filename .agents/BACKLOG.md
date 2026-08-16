@@ -238,3 +238,17 @@ Rows were individual floating cards with gaps between them; they are now
 divided rows inside a single panel, matching every other list in the app.
 Expanded content flows inline on a tinted ground rather than inside a nested
 card. TopBar metrics drop out at breakpoints rather than clipping mid-digit.
+
+### IA restructured around the workspace (DONE 2026-08-16)
+Strategies, Research and Trade were three destinations for one workflow.
+They are now tabs over a selected system inside a Workspace, with the systems
+list as the sidebar's actual content. Five sections became three (Overview /
+Workspace / Portfolio). The nav rail collapses to icons and widens on hover;
+mobile gets a bottom tab bar instead of a drawer.
+
+Added: instrument search (GET /api/search via yfinance), trade-P&L
+distribution (GET /api/pnl-distribution), self-hosted Inter + JetBrains Mono,
+and full trade tables (instrument, side, open/close, size, prices, reason).
+
+useResource replaces the `.catch(() => {})` pattern that rendered a failed
+request as an empty list — which is why accounts sometimes showed "none".

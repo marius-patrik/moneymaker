@@ -337,11 +337,11 @@ function SessionsPanel() {
         </div>
       ) : visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {sessions.length === 0 ? "No sessions yet — run a backtest from Strategies." : "Nothing matches."}
+          {sessions.length === 0 ? "No history yet — run a backtest from Systems." : "Nothing matches."}
         </p>
       ) : (
-        <Panel title={`${visible.length} runs`} dense>
-          <DataTable head={<><th>Session</th><th>When</th><th className="!text-right">Trades</th>
+        <Panel title={`${visible.length} closed runs`} dense>
+          <DataTable head={<><th>Run</th><th>When</th><th className="!text-right">Trades</th>
                             <th className="!text-right">Win</th><th className="!text-right">P&L</th><th className="w-6" /></>}>
             {visible.map((s) => (
               <tr key={s.name} onClick={() => open(s)} className="cursor-pointer">
@@ -370,15 +370,15 @@ export function Accounts() {
   return (
     <div className="space-y-3 p-3 sm:p-4">
       <div className="page-header">
-        <h1 className="text-[15px] font-semibold tracking-tight">Accounts</h1>
+        <h1 className="text-[15px] font-semibold tracking-tight">Portfolio</h1>
       </div>
       <Tabs defaultValue="accounts">
         <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
-          <TabsTrigger value="accounts">Accounts</TabsTrigger>
-          <TabsTrigger value="sessions">Sessions</TabsTrigger>
+          <TabsTrigger value="accounts">Portfolio</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value="accounts" className="pt-4"><AccountsPanel /></TabsContent>
-        <TabsContent value="sessions" className="pt-4"><SessionsPanel /></TabsContent>
+        <TabsContent value="history" className="pt-4"><SessionsPanel /></TabsContent>
       </Tabs>
     </div>
   );

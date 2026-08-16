@@ -76,6 +76,13 @@ export interface SessionEntry {
   last_trade?: string | null;
 }
 
+export interface Instrument {
+  symbol: string;
+  name: string;
+  type: string;
+  exchange: string;
+}
+
 export interface PriceBar { t: string; c: number }
 
 export interface PriceHistory {
@@ -93,6 +100,19 @@ export interface EquityPoint {
   i: number;
   t: string;
   equity: number;
+}
+
+export interface PnlBucket {
+  lo: number; hi: number; mid: number; count: number; pnl: number;
+}
+
+export interface PnlDistribution {
+  buckets: PnlBucket[];
+  trades: number;
+  wins: number;
+  losses: number;
+  gross_win: number;
+  gross_loss: number;
 }
 
 export interface Stats {
@@ -240,6 +260,7 @@ export const api = {
   stats: {
     get: () => get<Stats>("/stats"),
     equity: () => get<{ points: EquityPoint[]; trades: number; final: number }>("/equity"),
+    distribution: () => get<PnlDistribution>("/pnl-distribution"),
   },
   config: {
     get: () => get<AppConfig>("/config"),
@@ -286,6 +307,8 @@ export const api = {
       account_id?: string; closing?: boolean; reference_price?: number;
     }) => post<{ account_id: string; ticker: string; direction: string;
                  size: number; fill_price: number; balance: number }>("/orders", body),
+    search: (q: string) =>
+      get<{ results: Instrument[] }>(`/search?q=${encodeURIComponent(q)}`),
     history: (ticker: string, interval = "1h", days = 5) =>
       get<PriceHistory>(
         `/history/${encodeURIComponent(ticker)}?interval=${interval}&days=${days}`),

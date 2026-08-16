@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, PanelLeftOpen, Search, Loader2 } from "lucide-react";
-import { AnimatedIcon } from "@/components/ui/animated-icon";
-import { api, type Stats } from "@/lib/api";
+import { TrendingUp, Search } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { api, type Stats, type AppConfig } from "@/lib/api";
 import { fmtDollar, fmtPct, pnlColor } from "@/lib/utils";
 
 /**
@@ -11,15 +11,19 @@ import { fmtDollar, fmtPct, pnlColor } from "@/lib/utils";
  * equity, P&L, whether anything is running — so they are never a navigation
  * away. This is the single most "terminal" element in the app.
  */
-export function TopBar({
-  onOpenNav, onOpenPalette,
-}: { onOpenNav: () => void; onOpenPalette: () => void }) {
+export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [clock, setClock] = useState(() => new Date());
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [online, setOnline] = useState(true);
 
   useEffect(() => {
-    const load = () => api.stats.get().then(setStats).catch(() => {});
+    const load = () =>
+      api.stats.get()
+        .then((v) => { setStats(v); setOnline(true); })
+        .catch(() => setOnline(false));
     load();
+    api.config.get().then(setConfig).catch(() => {});
     const s = setInterval(load, 15000);
     const c = setInterval(() => setClock(new Date()), 1000);
     return () => { clearInterval(s); clearInterval(c); };
@@ -29,17 +33,9 @@ export function TopBar({
 
   return (
     <header className="glass z-40 flex h-12 shrink-0 items-center gap-3 border-b px-3 sm:px-4">
-      <button
-        onClick={onOpenNav}
-        aria-label="Open menu"
-        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
-      >
-        <AnimatedIcon icon={PanelLeftOpen} motionType="nudge" className="h-4 w-4" />
-      </button>
-
-      <div className="hidden items-center gap-2 md:flex">
+      <div className="flex shrink-0 items-center gap-2">
         <TrendingUp className="h-4 w-4 text-primary" />
-        <span className="text-[13px] font-semibold tracking-tight">moneymaker</span>
+        <span className="text-[13px] font-semibold tracking-tight sm:inline">moneymaker</span>
       </div>
 
       {/* Live account context — the reason this bar exists. */}
@@ -61,8 +57,21 @@ export function TopBar({
         <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">⌘K</kbd>
       </button>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <span className={live ? "live-dot" : "h-2 w-2 rounded-full bg-muted-foreground/40"} />
+      <div className="flex shrink-0 items-center gap-2.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="flex items-center gap-1.5">
+              <span className={
+                !online ? "h-2 w-2 rounded-full bg-loss"
+                : live ? "live-dot"
+                : "h-2 w-2 rounded-full bg-muted-foreground/40"} />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {!online ? "Disconnected" : live ? "Trading" : "Connected · flat"}
+            {config && <span className="block text-muted-foreground">v{config.version}</span>}
+          </TooltipContent>
+        </Tooltip>
         <span className="hidden font-mono text-[11px] tabular-nums text-muted-foreground sm:inline">
           {clock.toLocaleTimeString("en-GB")}
         </span>
