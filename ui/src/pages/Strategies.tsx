@@ -145,7 +145,7 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
                   ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Ticker</Label>
                     <Input value={form.ticker} onChange={(e) => setForm((f) => ({ ...f, ticker: e.target.value }))}
@@ -214,7 +214,7 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
                                     exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
                           <div className="space-y-2 border-t p-3">
-                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-3">
                               {Object.entries(s.params).map(([k, def]) => {
                                 const isChanged = String(def) !== params[k];
                                 return (
@@ -318,7 +318,7 @@ export function Strategies() {
   );
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Strategies</h1>
@@ -327,7 +327,7 @@ export function Strategies() {
           </p>
         </div>
         <Input value={query} onChange={(e) => setQuery(e.target.value)}
-               placeholder="Filter…" className="h-8 w-full max-w-56 text-sm" />
+               placeholder="Filter…" className="h-8 w-full text-sm sm:max-w-56" />
       </div>
 
       {loading ? (

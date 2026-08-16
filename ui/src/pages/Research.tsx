@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { FlaskConical, Loader2, Play, Trophy, GitFork, Dna } from "lucide-react";
+import { FlaskConical, Loader2, Trophy, GitFork, Dna, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
-import { api, type Strategy, type ForkSetResult, type EvolveResult } from "@/lib/api";
+import { api, type Strategy, type ForkSetResult, type EvolveResult, type Job } from "@/lib/api";
+import { useJob } from "@/lib/useJob";
 import { fmt, fmtDollar, pnlColor } from "@/lib/utils";
 import { LineChart, Line, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
@@ -24,6 +25,21 @@ function parseWindows(raw: string): [string, string][] {
       return [a?.trim() ?? "", b?.trim() ?? ""] as [string, string];
     })
     .filter(([a, b]) => a && b);
+}
+
+/** Small status chip so a running job is visible without watching the button. */
+function JobBadge({ job }: { job: Job }) {
+  const variant =
+    job.status === "succeeded" ? "profit"
+    : job.status === "failed" ? "loss"
+    : job.status === "cancelled" ? "outline"
+    : "secondary";
+  return (
+    <Badge variant={variant} className="font-mono text-[10px]">
+      {job.progress ?? job.status}
+      {job.job_id ? ` · ${job.job_id.slice(0, 6)}` : ""}
+    </Badge>
+  );
 }
 
 function StrategyPicker({
@@ -59,25 +75,24 @@ function Field({ label, value, onChange, placeholder, mono }: {
 function ForkEvalPanel({ strategies }: { strategies: Strategy[] }) {
   const { toast } = useToast();
   const [form, setForm] = useState({ strategy: "", ticker: "ES=F", windows: "2026-06-01:2026-08-01", interval: "5m" });
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ForkSetResult | null>(null);
+  const { job, start, cancel, running, result } = useJob<ForkSetResult>();
 
   useEffect(() => {
     if (!form.strategy && strategies[0]) setForm((f) => ({ ...f, strategy: strategies[0].name }));
   }, [strategies]);
 
+  // Report failures once, when the job settles.
+  useEffect(() => {
+    if (job?.status === "failed") toast(job.error ?? "Fork-eval failed", "error");
+  }, [job?.status]);
+
   async function run() {
     const windows = parseWindows(form.windows);
     if (!windows.length) return toast("Enter at least one window as start:end", "error");
-    setLoading(true);
-    try {
-      setResult(await api.research.forkEval({ ...form, windows }));
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Fork-eval failed", "error");
-    }
-    setLoading(false);
+    start(() => api.research.forkEval({ ...form, windows }));
   }
 
+  const loading = running;
   const forks = result?.forks ?? [];
   const best = forks.length ? Math.max(...forks.map((f) => f.score)) : 0;
 
@@ -92,7 +107,7 @@ function ForkEvalPanel({ strategies }: { strategies: Strategy[] }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-4">
             <StrategyPicker strategies={strategies} value={form.strategy}
                             onChange={(v) => setForm((f) => ({ ...f, strategy: v }))} />
             <Field label="Ticker" value={form.ticker} onChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
@@ -100,10 +115,18 @@ function ForkEvalPanel({ strategies }: { strategies: Strategy[] }) {
             <Field label="Windows" value={form.windows} mono
                    onChange={(v) => setForm((f) => ({ ...f, windows: v }))} placeholder="start:end,start:end" />
           </div>
-          <Button size="sm" onClick={run} disabled={loading || !form.strategy}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitFork className="h-4 w-4" />}
-            {loading ? "Evaluating…" : "Run fork-eval"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={run} disabled={loading || !form.strategy}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitFork className="h-4 w-4" />}
+              {loading ? "Evaluating…" : "Run fork-eval"}
+            </Button>
+            {running && (
+              <Button size="sm" variant="ghost" onClick={cancel}>
+                <XCircle className="h-4 w-4" /> Cancel
+              </Button>
+            )}
+            {job && <JobBadge job={job} />}
+          </div>
         </CardContent>
       </Card>
 
@@ -155,28 +178,26 @@ function EvolvePanel({ strategies }: { strategies: Strategy[] }) {
     strategy: "", ticker: "ES=F", windows: "2026-06-01:2026-08-01",
     interval: "5m", generations: "20", perturbation: "0.20",
   });
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<EvolveResult | null>(null);
+  const { job, start, cancel, running, result } = useJob<EvolveResult>();
 
   useEffect(() => {
     if (!form.strategy && strategies[0]) setForm((f) => ({ ...f, strategy: strategies[0].name }));
   }, [strategies]);
 
+  useEffect(() => {
+    if (job?.status === "failed") toast(job.error ?? "Evolve failed", "error");
+  }, [job?.status]);
+
   async function run() {
     const windows = parseWindows(form.windows);
     if (!windows.length) return toast("Enter at least one window as start:end", "error");
-    setLoading(true);
-    try {
-      setResult(await api.research.evolve({
-        strategy: form.strategy, ticker: form.ticker, windows, interval: form.interval,
-        generations: Number(form.generations), perturbation: Number(form.perturbation),
-      }));
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Evolve failed", "error");
-    }
-    setLoading(false);
+    start(() => api.research.evolve({
+      strategy: form.strategy, ticker: form.ticker, windows, interval: form.interval,
+      generations: Number(form.generations), perturbation: Number(form.perturbation),
+    }));
   }
 
+  const loading = running;
   const gens = result?.generations ?? [];
 
   return (
@@ -190,7 +211,7 @@ function EvolvePanel({ strategies }: { strategies: Strategy[] }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3">
             <StrategyPicker strategies={strategies} value={form.strategy}
                             onChange={(v) => setForm((f) => ({ ...f, strategy: v }))} />
             <Field label="Ticker" value={form.ticker} onChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
@@ -202,13 +223,22 @@ function EvolvePanel({ strategies }: { strategies: Strategy[] }) {
             <Field label="Windows" value={form.windows} mono
                    onChange={(v) => setForm((f) => ({ ...f, windows: v }))} />
           </div>
-          <Button size="sm" onClick={run} disabled={loading || !form.strategy}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Dna className="h-4 w-4" />}
-            {loading ? "Evolving…" : "Run evolve"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={run} disabled={loading || !form.strategy}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Dna className="h-4 w-4" />}
+              {loading ? "Evolving…" : "Run evolve"}
+            </Button>
+            {running && (
+              <Button size="sm" variant="ghost" onClick={cancel}>
+                <XCircle className="h-4 w-4" /> Cancel
+              </Button>
+            )}
+            {job && <JobBadge job={job} />}
+          </div>
           {loading && (
             <p className="text-xs text-muted-foreground">
-              This runs a full backtest per generation — it can take a while.
+              Running in the background — one full backtest per generation. You can
+              navigate away; the job keeps going and appears under Jobs.
             </p>
           )}
         </CardContent>
@@ -303,6 +333,83 @@ function RankingsPanel() {
   );
 }
 
+// -------------------------------------------------------------------- jobs
+
+function JobsPanel() {
+  const { toast } = useToast();
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    const tick = () =>
+      api.jobs.list()
+        .then((r) => { if (alive) setJobs(r.jobs); })
+        .catch(() => {})
+        .finally(() => { if (alive) setLoading(false); });
+    tick();
+    const t = setInterval(tick, 3000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  async function cancel(id: string) {
+    try {
+      await api.jobs.cancel(id);
+      toast("Cancellation requested", "info");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Cancel failed", "error");
+    }
+  }
+
+  if (loading) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+
+  if (jobs.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center">
+          <FlaskConical className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">No background jobs yet.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Fork-eval, evolve and optimize all run here. Jobs live in memory and clear on restart.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {jobs.map((j) => (
+        <motion.div key={j.job_id} layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+          <Card>
+            <CardContent className="flex items-center gap-3 py-3">
+              {j.status === "running"
+                ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                : <Badge variant={j.status === "succeeded" ? "profit" : j.status === "failed" ? "loss" : "outline"}
+                         className="shrink-0">{j.status}</Badge>}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{j.kind}</span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">{j.label}</span>
+                </div>
+                <div className="font-mono text-[11px] text-muted-foreground">
+                  {j.created_at}{j.finished_at ? ` → ${j.finished_at}` : ""} · {j.job_id.slice(0, 8)}
+                </div>
+                {j.error && <p className="mt-1 break-words text-[11px] text-destructive">{j.error}</p>}
+              </div>
+              {j.status === "running" && (
+                <Button size="sm" variant="ghost" onClick={() => cancel(j.job_id)}>
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------- page
 
 export function Research() {
@@ -313,7 +420,7 @@ export function Research() {
   }, []);
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-bold">Research</h1>
         <p className="text-sm text-muted-foreground">
@@ -322,14 +429,16 @@ export function Research() {
       </div>
 
       <Tabs defaultValue="fork">
-        <TabsList>
+        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="fork">Fork-eval</TabsTrigger>
           <TabsTrigger value="evolve">Evolve</TabsTrigger>
           <TabsTrigger value="rankings">Rankings</TabsTrigger>
+          <TabsTrigger value="jobs">Jobs</TabsTrigger>
         </TabsList>
         <TabsContent value="fork" className="pt-4"><ForkEvalPanel strategies={strategies} /></TabsContent>
         <TabsContent value="evolve" className="pt-4"><EvolvePanel strategies={strategies} /></TabsContent>
         <TabsContent value="rankings" className="pt-4"><RankingsPanel /></TabsContent>
+        <TabsContent value="jobs" className="pt-4"><JobsPanel /></TabsContent>
       </Tabs>
     </div>
   );

@@ -118,7 +118,7 @@ export function Accounts() {
   }
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Accounts</h1>
@@ -126,14 +126,14 @@ export function Accounts() {
             {filtered.length} of {accounts.length} · {fmtDollar(totalBalance)} combined
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <div className="relative min-w-0 flex-1 sm:flex-none">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => { setQuery(e.target.value); setLimit(24); }}
               placeholder="Filter by name or id…"
-              className="h-8 w-56 pl-8 text-sm"
+              className="h-8 w-full pl-8 text-sm sm:w-56"
             />
           </div>
           <Button size="sm" variant="outline" onClick={prune} disabled={pruning}>

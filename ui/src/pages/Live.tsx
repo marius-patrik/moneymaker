@@ -32,10 +32,10 @@ function SessionCard({ id, onStop }: { id: string; onStop: () => void }) {
     <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }}>
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <Activity className="h-4 w-4 text-primary animate-pulse" />
-              <span className="font-mono text-sm font-medium">{id}</span>
+              <span className="truncate font-mono text-sm font-medium">{id}</span>
               <Badge variant={status?.running ? "secondary" : "outline"}>
                 {status?.running ? "running" : "stopped"}
               </Badge>
@@ -48,7 +48,7 @@ function SessionCard({ id, onStop }: { id: string; onStop: () => void }) {
         </CardHeader>
         {status && (
           <CardContent>
-            <div className="grid grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 sm:gap-4">
               {[
                 { label: "Trades", value: String(status.trade_count) },
                 { label: "Total P&L", value: fmtDollar(status.total_pnl), color: pnlColor(status.total_pnl) },
@@ -100,7 +100,7 @@ export function Live() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Live Trading</h1>
         <Button variant="ghost" size="sm" onClick={refresh}>

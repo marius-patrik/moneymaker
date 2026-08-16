@@ -627,7 +627,8 @@ def cmd_server(args):
 def cmd_serve(args):
     from src.serve import serve
     sys.exit(serve(get_home(args.data_dir), host=args.host, port=args.port,
-                   ui_port=args.ui_port, prod=args.prod, no_ui=args.no_ui))
+                   ui_port=args.ui_port, prod=args.prod, no_ui=args.no_ui,
+                   force_build=args.force_build))
 
 
 def cmd_service(args):
@@ -859,6 +860,8 @@ def main():
                          help="Build the UI and serve it from the API on one port.")
     p_serve.add_argument("--no-ui", action="store_true",
                          help="Run the API only.")
+    p_serve.add_argument("--force-build", action="store_true",
+                         help="With --prod: rebuild the UI even if dist looks current.")
     p_serve.set_defaults(func=cmd_serve)
 
     p_svc = sub.add_parser(

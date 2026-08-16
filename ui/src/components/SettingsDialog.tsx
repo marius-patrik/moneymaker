@@ -53,7 +53,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[85dvh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -145,7 +145,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
             <div className="space-y-2 rounded-md border p-3">
               <Label className="text-xs font-semibold">Add credential (env var reference)</Label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <Input placeholder="provider" value={form.provider}
                        onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value }))}
                        className="h-8 text-xs" />

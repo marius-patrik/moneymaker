@@ -105,7 +105,7 @@ export function StrategyFlow({ strategyName, params }: StrategyFlowProps) {
   }, [strategyName]);
 
   return (
-    <div style={{ height: 180 }} className="rounded-lg border overflow-hidden">
+    <div className="h-32 overflow-hidden rounded-lg border sm:h-44">
       <ReactFlow
         nodes={nodes}
         edges={edges}

@@ -150,3 +150,21 @@ Confirmed via `gh repo view marius-patrik/moneymaker --json visibility`.
 ### CI / automated testing — ACTIVE (2026-08-16)
 GitHub Actions workflow at `.github/workflows/ci.yml`. Runs `pytest` on every
 push. 45 tests pass on ubuntu-latest, Python 3.11 and 3.12.
+
+### Background jobs for long operations (DONE 2026-08-16)
+fork-eval, evolve and optimize each run many full backtests and were holding
+the HTTP request open for minutes. `src/jobs.py` runs them in daemon threads
+and returns a job id; clients poll `/api/jobs/<id>`. `?background=false`
+still blocks for curl use. Jobs are in-memory by design — the durable output
+already lands in sessions/ and evaluations/. Cancellation is cooperative.
+UI has a Jobs tab and per-panel status badges. 7 tests.
+
+### Mobile-first responsive UI (DONE 2026-08-16)
+One implementation, not a separate mobile build. Below `md` the sidebar
+becomes a slide-over drawer behind a top-bar hamburger; grids collapse,
+wide tables scroll in-container, dialogs are viewport-bounded with dvh.
+
+### serve --prod rebuild skip (DONE 2026-08-16)
+`_dist_is_fresh()` compares ui/dist against every build input, so a service
+restart with an unchanged UI skips the bundle step: ~35s → 5s.
+`--force-build` overrides.

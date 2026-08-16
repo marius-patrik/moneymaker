@@ -70,6 +70,20 @@ export type BacktestResult = StatusPayload & {
   account_id: string;
 };
 
+export type JobStatus = "running" | "succeeded" | "failed" | "cancelled";
+
+export interface Job<T = unknown> {
+  job_id: string;
+  kind: string;
+  label: string;
+  status: JobStatus;
+  created_at: string;
+  finished_at: string | null;
+  progress: string | null;
+  error: string | null;
+  result?: T;
+}
+
 export interface AppConfig {
   version: string;
   home: string;
@@ -143,21 +157,27 @@ export const api = {
       post<{ ok: boolean }>("/credentials", body),
     clear: (provider: string) => del<{ cleared: string }>(`/credentials/${provider}`),
   },
+  // These return a Job, not a result — poll jobs.get() until it settles.
   research: {
     forkEval: (body: {
       strategy: string; ticker: string; windows: [string, string][];
       interval?: string; account?: number;
-    }) => post<ForkSetResult>("/fork-eval", body),
+    }) => post<Job<ForkSetResult>>("/fork-eval", body),
     evolve: (body: {
       strategy: string; ticker: string; windows: [string, string][];
       interval?: string; generations?: number; perturbation?: number;
-    }) => post<EvolveResult>("/evolve", body),
+    }) => post<Job<EvolveResult>>("/evolve", body),
     rankings: () => get<{ rankings: Record<string, unknown>[] }>("/rankings"),
     optimize: (body: {
       strategy: string; ticker: string; param_grid: Record<string, unknown[]>;
       train_windows: [string, string][]; test_windows?: [string, string][];
       interval?: string;
-    }) => post<OptimizeResult>("/optimize", body),
+    }) => post<Job<OptimizeResult>>("/optimize", body),
+  },
+  jobs: {
+    list: () => get<{ jobs: Job[] }>("/jobs"),
+    get: <T>(id: string) => get<Job<T>>(`/jobs/${id}`),
+    cancel: (id: string) => post<{ cancelling: string }>(`/jobs/${id}/cancel`, {}),
   },
   sessions: {
     list: () => get<{ sessions: string[] }>("/sessions"),

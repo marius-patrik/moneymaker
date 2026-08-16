@@ -68,19 +68,19 @@ export function Sessions() {
 
   if (selected) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => { setSelected(null); setTrades([]); }}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-base font-bold font-mono truncate">{selected}</h1>
+          <h1 className="min-w-0 truncate font-mono text-sm font-bold sm:text-base">{selected}</h1>
         </div>
 
         {loading ? (
           <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               {[
                 { label: "Total P&L", value: fmtDollar(totalPnl), color: pnlColor(totalPnl) },
                 { label: "Trades", value: String(trades.length) },
@@ -103,7 +103,7 @@ export function Sessions() {
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm">Trades</CardTitle></CardHeader>
               <ScrollArea className="h-72">
-                <table className="w-full text-xs">
+                <table className="w-full min-w-[520px] text-xs">
                   <thead>
                     <tr className="border-b text-muted-foreground">
                       <th className="text-left py-2 px-3">Time</th>
@@ -140,7 +140,7 @@ export function Sessions() {
   );
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Sessions</h1>
@@ -149,7 +149,7 @@ export function Sessions() {
           </p>
         </div>
         <Input value={filter} onChange={(e) => setFilter(e.target.value)}
-               placeholder="Filter sessions…" className="h-8 w-full max-w-56 text-sm" />
+               placeholder="Filter sessions…" className="h-8 w-full text-sm sm:max-w-56" />
       </div>
       {visible.length === 0 ? (
         <p className="text-muted-foreground text-sm">

@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from src.accounts import AccountManager, CredentialStore
 from src.data import DataFeed
 from src.engine import Simulator
+from src.jobs import JobManager
 from src.logger import TradeLogger
 from src.multiwindow import run_multi_window_backtest
 from src.optimizer import default_objective, grid_search
@@ -37,6 +38,7 @@ class ServerState:
         self.home = home
         self.sessions: dict[str, Simulator] = {}
         self.lock = threading.Lock()
+        self.jobs = JobManager()
 
 
 # ---------------------------------------------------------------------------
@@ -323,20 +325,35 @@ def make_app(home: str) -> FastAPI:
     # ---- optimize ----
 
     @api.post("/optimize")
-    def run_optimize(body: OptimizeBody):
+    def run_optimize(body: OptimizeBody, background: bool = True):
+        """
+        Grid-search the parameter space. Cost is the product of the grid
+        sizes times the window count, so this is a job by default.
+        """
         strategies = load_strategies(state.home)
         strategy_cls = strategies.get(body.strategy)
         if not strategy_cls:
             raise HTTPException(400, f"unknown strategy: {body.strategy}")
         train_windows = [tuple(w) for w in body.train_windows]
         test_windows = [tuple(w) for w in body.test_windows] if body.test_windows else None
-        result = grid_search(
-            strategy_cls=strategy_cls, param_grid=body.param_grid,
-            provider_name=body.provider, home=state.home,
-            ticker=body.ticker, train_windows=train_windows, test_windows=test_windows,
-            interval=body.interval, account_balance=body.account, risk_pct=body.risk_pct,
-        )
-        return result.to_dict(default_objective)
+
+        def _work(_job=None):
+            return grid_search(
+                strategy_cls=strategy_cls, param_grid=body.param_grid,
+                provider_name=body.provider, home=state.home,
+                ticker=body.ticker, train_windows=train_windows,
+                test_windows=test_windows, interval=body.interval,
+                account_balance=body.account, risk_pct=body.risk_pct,
+            ).to_dict(default_objective)
+
+        if not background:
+            return _work()
+        combos = 1
+        for values in body.param_grid.values():
+            combos *= max(1, len(values))
+        job = state.jobs.submit(
+            "optimize", f"{body.strategy} · {body.ticker} · {combos} combos", _work)
+        return job.to_dict()
 
     # ---- agents: fork-eval, evolve, rankings ----
 
@@ -356,36 +373,79 @@ def make_app(home: str) -> FastAPI:
         return forks
 
     @api.post("/fork-eval")
-    def run_fork_eval(body: ForkEvalBody):
+    def run_fork_eval(body: ForkEvalBody, background: bool = True):
+        """
+        Evaluate a strategy's FORKS. Runs one backtest per fork per window,
+        so it goes through the job queue by default; pass background=false
+        to block on the result instead.
+        """
         from src.agents.forker import fork_and_eval
         strategies = load_strategies(state.home)
         strategy_cls = strategies.get(body.strategy)
         if not strategy_cls:
             raise HTTPException(400, f"unknown strategy: {body.strategy}")
-        result = fork_and_eval(
-            forks=_resolve_forks(strategy_cls, strategies),
-            provider_name=body.provider, home=state.home, ticker=body.ticker,
-            windows=[tuple(w) for w in body.windows], interval=body.interval,
-            account_balance=body.account, risk_pct=body.risk_pct,
-        )
-        return result.to_dict()
+        forks = _resolve_forks(strategy_cls, strategies)
+
+        def _work(_job=None):
+            return fork_and_eval(
+                forks=forks, provider_name=body.provider, home=state.home,
+                ticker=body.ticker, windows=[tuple(w) for w in body.windows],
+                interval=body.interval, account_balance=body.account,
+                risk_pct=body.risk_pct,
+            ).to_dict()
+
+        if not background:
+            return _work()
+        job = state.jobs.submit("fork-eval", f"{body.strategy} · {body.ticker}", _work)
+        return job.to_dict()
 
     @api.post("/evolve")
-    def run_evolve(body: EvolveBody):
+    def run_evolve(body: EvolveBody, background: bool = True):
+        """
+        Hill-climb the strategy's numeric parameters. One full backtest per
+        generation — always slow, so this is a job by default.
+        """
         from src.agents.evolution import evolve
         strategies = load_strategies(state.home)
         strategy_cls = strategies.get(body.strategy)
         if not strategy_cls:
             raise HTTPException(400, f"unknown strategy: {body.strategy}")
-        result = evolve(
-            strategy_cls=strategy_cls, provider_name=body.provider,
-            home=state.home, ticker=body.ticker,
-            windows=[tuple(w) for w in body.windows],
-            start_params=body.start_params, max_generations=body.generations,
-            perturbation_pct=body.perturbation, interval=body.interval,
-            account_balance=body.account, risk_pct=body.risk_pct,
-        )
-        return result.to_dict()
+
+        def _work(_job=None):
+            return evolve(
+                strategy_cls=strategy_cls, provider_name=body.provider,
+                home=state.home, ticker=body.ticker,
+                windows=[tuple(w) for w in body.windows],
+                start_params=body.start_params, max_generations=body.generations,
+                perturbation_pct=body.perturbation, interval=body.interval,
+                account_balance=body.account, risk_pct=body.risk_pct,
+            ).to_dict()
+
+        if not background:
+            return _work()
+        job = state.jobs.submit(
+            "evolve", f"{body.strategy} · {body.ticker} · {body.generations}gen", _work)
+        return job.to_dict()
+
+    # ---- jobs ----
+
+    @api.get("/jobs")
+    def list_jobs():
+        # Results can be large; the list view only needs metadata.
+        return {"jobs": [j.to_dict(include_result=False) for j in state.jobs.list()]}
+
+    @api.get("/jobs/{job_id}")
+    def get_job(job_id: str):
+        job = state.jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "unknown job_id")
+        return job.to_dict()
+
+    @api.post("/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str):
+        if not state.jobs.cancel(job_id):
+            raise HTTPException(400, "job is unknown or already finished")
+        return {"cancelling": job_id}
 
     @api.get("/rankings")
     def get_rankings():

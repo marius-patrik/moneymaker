@@ -52,7 +52,7 @@ export function Dashboard() {
   const totalPnl = Object.values(liveStatuses).reduce((s, st) => s + (st.total_pnl ?? 0), 0);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
@@ -60,7 +60,7 @@ export function Dashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         <StatCard i={0} title="Accounts" value={String(accounts.length)} sub="registered" icon={Wallet} />
         <StatCard i={1} title="Total Balance" value={fmtDollar(totalBalance)} sub="across all accounts" icon={Layers} />
         <StatCard i={2} title="Sessions" value={String(sessions.length)} sub="recorded runs" icon={FileText} />

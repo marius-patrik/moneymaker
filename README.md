@@ -79,6 +79,7 @@ src/                                Python package (import as `src.*`)
   server.py           FastAPI app — /api routes + serves ui/dist in production
   serve.py            `serve` — runs API + UI as one supervised process tree
   service.py          `service` — launchd / systemd install and control
+  jobs.py             background job runner for long operations
   cli.py              argparse CLI entry point (command: `moneymaker`)
   agents/
     forker.py         fork_and_eval() + rolling_fork_eval() — compare N strategy variants
@@ -114,17 +115,19 @@ ui/                                 React + TypeScript web UI (Bun + RSBuild)
     main.tsx                        entry point
     App.tsx                         routes + page transitions
     lib/api.ts                      typed client for the /api surface
+    lib/useJob.ts                   polls a background job to completion
     lib/utils.ts                    cn() + number/currency formatters
     components/ui/                  shadcn/ui primitives
-    components/layout/Sidebar.tsx   nav
+    components/layout/Sidebar.tsx   desktop rail + mobile drawer
     components/StrategyFlow.tsx     Dagre-laid-out pipeline diagram
-    pages/                          Dashboard, Strategies, Live, Sessions, Accounts
+    pages/                          Dashboard, Strategies, Research, Live, Sessions, Accounts
 
 tests/
   test_engine.py                    pytest suite, no network required
   test_multiwindow_optimizer.py     multi-window + optimizer tests
   test_installer.py                 strategy install/upgrade tests
   test_agents.py                    fork-eval + evolution tests
+  test_jobs.py                      background job runner tests
 ```
 
 ## Data directory
@@ -320,7 +323,31 @@ POST /api/live/start      {strategy, ticker, provider?, account_id?, account?, r
 GET  /api/live/<id>/status     POST /api/live/<id>/stop
 GET  /api/live/list
 GET  /api/sessions             GET /api/sessions/<filename>
+POST /api/fork-eval       {strategy, ticker, windows, interval?}       → Job
+POST /api/evolve          {strategy, ticker, windows, generations?}    → Job
+GET  /api/rankings
+GET  /api/jobs                 GET /api/jobs/<id>   POST /api/jobs/<id>/cancel
+POST /api/accounts/prune?prefix=mw_&dry_run=true
 ```
+
+### Background jobs
+
+`fork-eval`, `evolve` and `optimize` each run many full backtests and can
+take minutes, so they return a **job** immediately rather than holding the
+request open:
+
+```
+POST /api/evolve  →  {"job_id": "a1b2c3…", "status": "running", …}
+GET  /api/jobs/a1b2c3…  →  poll until status is succeeded/failed/cancelled
+```
+
+Pass `?background=false` to block and get the result directly instead —
+convenient from curl, but liable to time out on anything large.
+
+Jobs are in-memory and cleared by a restart, which is deliberate: a
+half-finished parameter search isn't worth persisting, and the results that
+matter are already written to `sessions/` and `evaluations/`. Cancellation is
+cooperative, so a job stays `running` until its worker notices.
 
 Live sessions run as background threads, so you can start one and poll
 `/api/live/<id>/status` while it runs. Backtest and live-status responses
@@ -354,12 +381,19 @@ To work on the frontend alone, `cd ui && bun run dev` still works; it proxies
 
 Pages: **Dashboard** (accounts, balances, live sessions), **Strategies**
 (pipeline diagram, editable parameters, single- and multi-window backtests),
-**Research** (fork-eval rankings, parameter evolution, stored rolling
-rankings), **Live** (start/stop/monitor sessions, polls every 3s),
-**Sessions** (trade tables with cumulative P&L charts), **Accounts**
+**Research** (fork-eval, parameter evolution, rolling rankings, and a Jobs
+tab for background work), **Live** (start/stop/monitor sessions, polls every
+3s), **Sessions** (trade tables with cumulative P&L charts), **Accounts**
 (create, search, delete, prune).
 
-`Cmd/Ctrl+B` collapses the sidebar; `Cmd/Ctrl+,` opens settings.
+The layout is mobile-first and responsive — one implementation, not a
+separate mobile build. Below the `md` breakpoint the sidebar becomes a
+slide-over drawer behind a hamburger in the top bar; grids collapse to one
+or two columns and wide tables scroll inside their container. From `md` up
+you get the persistent rail, collapsible to icons.
+
+`Cmd/Ctrl+B` collapses the sidebar; `Cmd/Ctrl+,` opens settings; `Esc`
+closes the mobile drawer.
 
 ## Running as a service
 
@@ -394,7 +428,7 @@ pytest
 ```
 
 The test suite runs entirely against synthetic price data — no network
-calls, no live yfinance requests. All 48 tests pass on Python 3.11 and 3.12.
+calls, no live yfinance requests. All 55 tests pass on Python 3.11 and 3.12.
 CI runs on every push via GitHub Actions (`.github/workflows/ci.yml`), which
 also typechecks and builds the web UI.
 

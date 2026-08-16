@@ -75,13 +75,47 @@ def _ui_deps_installed() -> bool:
     return (_UI_DIR / "node_modules").is_dir()
 
 
-def _build_ui() -> None:
+def _dist_is_fresh() -> bool:
+    """
+    True when ui/dist is newer than every input that feeds it.
+
+    A service restart shouldn't pay for a rebuild that would produce the
+    same bundle — that added ~30s to every `service restart`.
+    """
+    dist = _UI_DIR / "dist"
+    index = dist / "index.html"
+    if not index.exists():
+        return False
+    built_at = index.stat().st_mtime
+
+    watched = [
+        *(_UI_DIR / "src").rglob("*"),
+        _UI_DIR / "package.json",
+        _UI_DIR / "rsbuild.config.ts",
+        _UI_DIR / "tailwind.config.ts",
+        _UI_DIR / "tsconfig.json",
+        _UI_DIR / "index.html",
+    ]
+    for path in watched:
+        try:
+            if path.is_file() and path.stat().st_mtime > built_at:
+                return False
+        except OSError:
+            continue  # vanished mid-scan; not a reason to force a rebuild
+    return True
+
+
+def _build_ui(force: bool = False) -> None:
+    if not force and _dist_is_fresh():
+        print(_prefix("ui") + "dist is up to date — skipping build.")
+        return
     print(_prefix("ui") + "building production bundle…")
     subprocess.run(["bun", "run", "build"], cwd=str(_UI_DIR), check=True)
 
 
 def serve(home: str, host: str = "127.0.0.1", port: int = 8787,
-          ui_port: int = 5173, prod: bool = False, no_ui: bool = False) -> int:
+          ui_port: int = 5173, prod: bool = False, no_ui: bool = False,
+          force_build: bool = False) -> int:
     """Run the API (and UI) in the foreground. Returns a process exit code."""
     if _port_in_use(host, port):
         print(f"error: {host}:{port} is already in use — another server is running.\n"
@@ -106,7 +140,7 @@ def serve(home: str, host: str = "127.0.0.1", port: int = 8787,
     # In prod we build the UI first; FastAPI then serves ui/dist itself, so
     # there is no second process and everything lives on one port.
     if want_ui and prod:
-        _build_ui()
+        _build_ui(force=force_build)
 
     api_cmd = [sys.executable, "-m", "uvicorn", "src.server:create_app",
                "--factory", "--host", host, "--port", str(port)]

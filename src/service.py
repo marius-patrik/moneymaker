@@ -48,8 +48,19 @@ def _target_path() -> pathlib.Path:
 
 
 def _log_dir(home: str) -> pathlib.Path:
+    """
+    Where the service writes its logs.
+
+    Creating the directory is best-effort: rendering a unit file should not
+    fail just because the data dir isn't reachable yet (a not-yet-mounted
+    volume, a path that only exists on the target machine). The service
+    manager creates it at start time if it is missing.
+    """
     d = pathlib.Path(home) / "logs"
-    d.mkdir(parents=True, exist_ok=True)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
     return d
 
 

@@ -15,8 +15,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=__REPO__
-Environment=MONEYMAKER_HOME=__HOME__
-Environment=PATH=__PATH__
+# Quoted: PATH entries can contain spaces, which systemd otherwise treats as
+# a separator between assignments.
+Environment="MONEYMAKER_HOME=__HOME__"
+Environment="PATH=__PATH__"
 ExecStart=__PYTHON__ -m src.cli serve --prod --host __HOST__ --port __PORT__
 
 # serve exits non-zero if either child dies, so always-restart is what we want.
