@@ -127,6 +127,44 @@ re-run now that the fix is in.
   written — check `git log origin/main..HEAD` (or equivalent) to see if
   anything local is still unpushed.
 
+## Session: Claude Code takeover + full-window backtest + optimizer (2026-08-16)
+
+Claude Code took over as ongoing owner. Work done this session:
+
+**Doc conventions applied:** `AGENT_PROMPT.md` → `HANDOFF.md`, `PROJECT_HISTORY.md` →
+`CONTEXT.md` (matching agents-superproject naming conventions). Updated artifact
+(`moneymaker (1).zip`) brought in: `multiwindow.py`, `optimizer.py`,
+`test_multiwindow_optimizer.py`; daily-reset fix in `strategy.py`; 23 tests pass.
+
+**Real-data backtest confirmed (2026-06-18 → 2026-08-16, max 60-day 5m window):**
+- `retail_sales_spike`: 40 trades, 32.5% win rate, -1,007.65 P&L
+- `retail_sales_spike_filtered`: 0 trades with default threshold (0.15%)
+
+**Spike-move diagnostic:** 40 days analyzed; median move 0.03%; only 3 of 40 days
+exceed 0.15%. With 5m data, there is always exactly one baseline bar before 8:30,
+so `pre_noise_pct` is always 0 — `min_surprise_ratio` is completely inert.
+
+**Bug found and fixed:** `~/.moneymaker/strategies/retail_sales_spike_filtered.py`
+was the pre-fix version (missing `reset_session_if_new_day`). Optimizer always saw
+0 trades because day 1's `hard_exit_time` was never reset, blocking all later days.
+Synced the updated file to fix. This reveals an architectural gap: the engine reads
+drop-in strategies from `~/.moneymaker/strategies/`, not the repo's `strategies/`
+directory — they can silently diverge. Worth consolidating or adding an auto-sync.
+
+**Optimizer results (54-combo grid, train 2026-06-18:07-18, test 07-18:08-16):**
+Best candidate: `min_spike_pct=0.0015, stop_pct=0.006` → 3 train trades, 0% win rate,
+-187 P&L, 0 test trades. The filter reduces trade count but doesn't improve the
+underlying R:R (avg loss > avg win at 32% hit rate). No profitable combination found.
+The strategy's edge problem is structural, not a threshold-tuning problem.
+
+**Open questions for future sessions:**
+- Underlying R:R: the base strategy loses on 67% of days. Fix that first before
+  optimizing the filter. Candidates: tighten entry timing, require stronger basing
+  signal, or look for a different post-release entry condition entirely.
+- Strategy/home sync: add a mechanism so `scripts/` strategies auto-sync to
+  `~/.moneymaker/strategies/` at launch, or move drop-in loading to the repo dir.
+- Stub providers: not yet implemented; decision to implement is always explicit.
+
 ## Ownership handoff
 
 Starting from whenever you (the agent reading this) pick this up: you
