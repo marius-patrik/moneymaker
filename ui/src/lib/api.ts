@@ -13,6 +13,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 const get = <T>(path: string) => req<T>("GET", path);
 const post = <T>(path: string, body: unknown) => req<T>("POST", path, body);
+const del = <T>(path: string) => req<T>("DELETE", path);
 
 // --- types ---
 
@@ -69,6 +70,52 @@ export type BacktestResult = StatusPayload & {
   account_id: string;
 };
 
+export interface AppConfig {
+  version: string;
+  home: string;
+  data_providers: string[];
+  execution_providers: string[];
+}
+
+export interface ForkResult {
+  label: string;
+  score: number;
+  params: Record<string, unknown>;
+  aggregate: Record<string, number>;
+}
+
+export interface ForkSetResult {
+  ticker: string;
+  forks: ForkResult[];
+  [k: string]: unknown;
+}
+
+export interface EvolveResult {
+  best_params: Record<string, unknown>;
+  best_score: number;
+  generations: { generation: number; score: number; params: Record<string, unknown> }[];
+  [k: string]: unknown;
+}
+
+export interface MultiWindowResult {
+  total_pnl: number;
+  windows_profitable: number;
+  window_count: number;
+  pnl_std: number;
+  windows: { start: string; end: string; total_pnl: number; trades: number }[];
+  [k: string]: unknown;
+}
+
+export interface OptimizeResult {
+  results: {
+    params: Record<string, unknown>;
+    train_score: number;
+    test_score?: number;
+    overfit?: boolean;
+  }[];
+  [k: string]: unknown;
+}
+
 // --- strategies ---
 export const api = {
   strategies: {
@@ -77,16 +124,37 @@ export const api = {
   providers: {
     list: () => get<{ providers: Provider[] }>("/providers"),
   },
+  config: {
+    get: () => get<AppConfig>("/config"),
+  },
   accounts: {
     list: () => get<{ accounts: Account[] }>("/accounts"),
     get: (id: string) => get<Account>(`/accounts/${id}`),
     create: (body: { name: string; provider?: string; starting_balance?: number }) =>
       post<Account>("/accounts", body),
+    remove: (id: string) => del<{ deleted: string }>(`/accounts/${id}`),
   },
   credentials: {
-    list: () => get<{ credentials: unknown[] }>("/credentials"),
+    list: () => get<{ credentials: Record<string, Record<string, string>> }>("/credentials"),
     set: (body: { provider: string; key: string; env_var?: string; value?: string }) =>
       post<{ ok: boolean }>("/credentials", body),
+    clear: (provider: string) => del<{ cleared: string }>(`/credentials/${provider}`),
+  },
+  research: {
+    forkEval: (body: {
+      strategy: string; ticker: string; windows: [string, string][];
+      interval?: string; account?: number;
+    }) => post<ForkSetResult>("/fork-eval", body),
+    evolve: (body: {
+      strategy: string; ticker: string; windows: [string, string][];
+      interval?: string; generations?: number; perturbation?: number;
+    }) => post<EvolveResult>("/evolve", body),
+    rankings: () => get<{ rankings: Record<string, unknown>[] }>("/rankings"),
+    optimize: (body: {
+      strategy: string; ticker: string; param_grid: Record<string, unknown[]>;
+      train_windows: [string, string][]; test_windows?: [string, string][];
+      interval?: string;
+    }) => post<OptimizeResult>("/optimize", body),
   },
   sessions: {
     list: () => get<{ sessions: string[] }>("/sessions"),
@@ -102,6 +170,8 @@ export const api = {
       account?: number;
       risk_pct?: number;
       params?: Record<string, unknown>;
+      data_provider?: string;
+      data_provider_path?: string;
     }) => post<BacktestResult>("/backtest", body),
     runMulti: (body: {
       strategy: string;
@@ -109,7 +179,7 @@ export const api = {
       windows: [string, string][];
       interval?: string;
       account?: number;
-    }) => post<Record<string, unknown>>("/backtest-multi", body),
+    }) => post<MultiWindowResult>("/backtest-multi", body),
   },
   live: {
     list: () => get<{ session_ids: string[] }>("/live/list"),

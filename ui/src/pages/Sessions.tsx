@@ -4,6 +4,7 @@ import { FileText, ChevronRight, Loader2, ArrowLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { api, type Trade } from "@/lib/api";
@@ -45,6 +46,7 @@ export function Sessions() {
   const [selected, setSelected] = useState<string | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     api.sessions.list().then((r) => setSessions(r.sessions)).catch(() => {});
@@ -133,14 +135,31 @@ export function Sessions() {
     );
   }
 
+  const visible = [...sessions].reverse().filter((s) =>
+    s.toLowerCase().includes(filter.toLowerCase())
+  );
+
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold">Sessions</h1>
-      {sessions.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No sessions yet. Run a backtest to see results here.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Sessions</h1>
+          <p className="text-sm text-muted-foreground">
+            {visible.length} of {sessions.length} recorded runs
+          </p>
+        </div>
+        <Input value={filter} onChange={(e) => setFilter(e.target.value)}
+               placeholder="Filter sessions…" className="h-8 w-full max-w-56 text-sm" />
+      </div>
+      {visible.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          {sessions.length === 0
+            ? "No sessions yet. Run a backtest to see results here."
+            : `No sessions match “${filter}”.`}
+        </p>
       ) : (
         <div className="space-y-1">
-          {[...sessions].reverse().map((s) => (
+          {visible.map((s) => (
             <motion.div key={s} whileHover={{ x: 2 }}>
               <button
                 onClick={() => open(s)}

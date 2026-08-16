@@ -18,10 +18,11 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    // `moneymaker serve` passes these so both sides agree on ports.
+    port: Number(process.env.MONEYMAKER_UI_PORT) || 5173,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8787",
+        target: process.env.MONEYMAKER_API || "http://127.0.0.1:8787",
       },
     },
   },

@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
-import { motion } from "motion/react";
-import { Wallet, Plus, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Wallet, Plus, Loader2, Trash2, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { api, type Account } from "@/lib/api";
 import { fmtDollar } from "@/lib/utils";
 
@@ -58,48 +59,131 @@ function CreateDialog({ onCreated }: { onCreated: (a: Account) => void }) {
 }
 
 export function Accounts() {
+  const { toast } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [limit, setLimit] = useState(24);
 
   useEffect(() => {
-    api.accounts.list().then((r) => setAccounts(r.accounts)).catch(() => {});
+    api.accounts.list()
+      .then((r) => setAccounts(r.accounts))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase();
+    return accounts.filter(
+      (a) => a.name.toLowerCase().includes(q) || a.account_id.toLowerCase().includes(q)
+    );
+  }, [accounts, query]);
+
+  const shown = filtered.slice(0, limit);
+  const totalBalance = filtered.reduce((s, a) => s + (a.starting_balance ?? 0), 0);
+
+  async function remove(a: Account) {
+    setDeleting(a.account_id);
+    try {
+      await api.accounts.remove(a.account_id);
+      setAccounts((prev) => prev.filter((x) => x.account_id !== a.account_id));
+      toast(`Deleted ${a.name}`, "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Delete failed", "error");
+    }
+    setDeleting(null);
+  }
+
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Accounts</h1>
-        <CreateDialog onCreated={(a) => setAccounts((prev) => [...prev, a])} />
+    <div className="space-y-4 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Accounts</h1>
+          <p className="text-sm text-muted-foreground">
+            {filtered.length} of {accounts.length} · {fmtDollar(totalBalance)} combined
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setLimit(24); }}
+              placeholder="Filter by name or id…"
+              className="h-8 w-56 pl-8 text-sm"
+            />
+          </div>
+          <CreateDialog onCreated={(a) => setAccounts((prev) => [...prev, a])} />
+        </div>
       </div>
 
-      {accounts.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No accounts yet.</p>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((a, i) => (
-            <motion.div key={a.account_id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Wallet className="h-4 w-4 text-primary" />
-                      <CardTitle className="text-sm">{a.name}</CardTitle>
-                    </div>
-                    <Badge variant="outline">{a.provider}</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="text-2xl font-bold">{fmtDollar(a.starting_balance)}</div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>{a.currency}</span>
-                    <span>·</span>
-                    <span className="font-mono truncate">{a.account_id}</span>
-                  </div>
-                  {a.is_live && <Badge variant="destructive" className="text-xs">live</Badge>}
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
+      {loading ? (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
         </div>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {accounts.length === 0 ? "No accounts yet." : `No accounts match “${query}”.`}
+        </p>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <AnimatePresence mode="popLayout">
+              {shown.map((a, i) => (
+                <motion.div
+                  key={a.account_id}
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ delay: Math.min(i, 12) * 0.02 }}
+                >
+                  <Card className="group">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Wallet className="h-4 w-4 shrink-0 text-primary" />
+                          <CardTitle className="truncate text-sm">{a.name}</CardTitle>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Badge variant="outline">{a.provider}</Badge>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                            onClick={() => remove(a)}
+                            disabled={deleting === a.account_id}
+                            aria-label={`Delete ${a.name}`}
+                          >
+                            {deleting === a.account_id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Trash2 className="h-3.5 w-3.5 text-destructive" />}
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div className="text-2xl font-bold">{fmtDollar(a.starting_balance)}</div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{a.currency}</span>
+                        <span>·</span>
+                        <span className="truncate font-mono">{a.account_id}</span>
+                      </div>
+                      {a.is_live && <Badge variant="destructive" className="text-xs">live</Badge>}
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+
+          {filtered.length > shown.length && (
+            <Button variant="outline" className="w-full" onClick={() => setLimit((n) => n + 48)}>
+              Show more ({filtered.length - shown.length} remaining)
+            </Button>
+          )}
+        </>
       )}
     </div>
   );

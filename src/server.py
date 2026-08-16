@@ -69,6 +69,8 @@ class BacktestBody(BaseModel):
     account: float = 10000.0
     risk_pct: float = 0.01
     params: dict[str, Any] = {}
+    data_provider: str = "yfinance"
+    data_provider_path: Optional[str] = None
 
 
 class LiveStartBody(BaseModel):
@@ -90,6 +92,29 @@ class BacktestMultiBody(BaseModel):
     provider: str = "simulated"
     account: float = 10000.0
     risk_pct: float = 0.01
+
+
+class ForkEvalBody(BaseModel):
+    strategy: str
+    ticker: str
+    windows: list[list[str]]
+    interval: str = "5m"
+    provider: str = "simulated"
+    account: float = 10000.0
+    risk_pct: float = 0.01
+
+
+class EvolveBody(BaseModel):
+    strategy: str
+    ticker: str
+    windows: list[list[str]]
+    interval: str = "5m"
+    provider: str = "simulated"
+    account: float = 10000.0
+    risk_pct: float = 0.01
+    generations: int = 20
+    perturbation: float = 0.20
+    start_params: Optional[dict[str, Any]] = None
 
 
 class OptimizeBody(BaseModel):
@@ -197,6 +222,14 @@ def make_app(home: str) -> FastAPI:
                        starting_balance=body.starting_balance, is_live=body.is_live)
         return a.to_dict()
 
+    @api.delete("/accounts/{account_id}")
+    def delete_account(account_id: str):
+        mgr = AccountManager(state.home)
+        if not mgr.get(account_id):
+            raise HTTPException(404, "not found")
+        mgr.delete(account_id)
+        return {"deleted": account_id}
+
     # ---- credentials ----
 
     @api.get("/credentials")
@@ -214,6 +247,11 @@ def make_app(home: str) -> FastAPI:
         else:
             raise HTTPException(400, "provide env_var (recommended) or value")
         return {"ok": True}
+
+    @api.delete("/credentials/{provider}")
+    def clear_credential(provider: str, key: Optional[str] = None):
+        CredentialStore(state.home).clear(provider, key)
+        return {"cleared": provider, "key": key}
 
     # ---- sessions ----
 
@@ -243,8 +281,10 @@ def make_app(home: str) -> FastAPI:
         strategy_cls = strategies.get(body.strategy)
         if not strategy_cls:
             raise HTTPException(400, f"unknown strategy: {body.strategy}")
-        feed = DataFeed(state.home)
-        df = feed.get_historical(body.ticker, body.start, body.end, interval=body.interval)
+        from src.data_providers import make_data_provider
+        kwargs = {"path": body.data_provider_path} if body.data_provider_path else {}
+        data_prov = make_data_provider(body.data_provider, state.home, **kwargs)
+        df = data_prov.get_historical(body.ticker, body.start, body.end, interval=body.interval)
         strategy = strategy_cls(**body.params)
         provider = make_provider(body.provider, state.home)
         account_id = _resolve_account(provider, body.account_id, body.account)
@@ -288,6 +328,73 @@ def make_app(home: str) -> FastAPI:
             interval=body.interval, account_balance=body.account, risk_pct=body.risk_pct,
         )
         return result.to_dict(default_objective)
+
+    # ---- agents: fork-eval, evolve, rankings ----
+
+    def _resolve_forks(strategy_cls, strategies: dict) -> list:
+        """Resolve a strategy's FORKS entries to (label, cls, params) triples."""
+        raw = getattr(strategy_cls, "FORKS", None)
+        if not raw:
+            raise HTTPException(
+                400, f"strategy '{strategy_cls.name}' declares no FORKS")
+        forks = []
+        for label, strat_name, params in raw:
+            cls = strategies.get(strat_name)
+            if not cls:
+                raise HTTPException(
+                    400, f"fork '{label}' references unknown strategy '{strat_name}'")
+            forks.append((label, cls, params))
+        return forks
+
+    @api.post("/fork-eval")
+    def run_fork_eval(body: ForkEvalBody):
+        from src.agents.forker import fork_and_eval
+        strategies = load_strategies(state.home)
+        strategy_cls = strategies.get(body.strategy)
+        if not strategy_cls:
+            raise HTTPException(400, f"unknown strategy: {body.strategy}")
+        result = fork_and_eval(
+            forks=_resolve_forks(strategy_cls, strategies),
+            provider_name=body.provider, home=state.home, ticker=body.ticker,
+            windows=[tuple(w) for w in body.windows], interval=body.interval,
+            account_balance=body.account, risk_pct=body.risk_pct,
+        )
+        return result.to_dict()
+
+    @api.post("/evolve")
+    def run_evolve(body: EvolveBody):
+        from src.agents.evolution import evolve
+        strategies = load_strategies(state.home)
+        strategy_cls = strategies.get(body.strategy)
+        if not strategy_cls:
+            raise HTTPException(400, f"unknown strategy: {body.strategy}")
+        result = evolve(
+            strategy_cls=strategy_cls, provider_name=body.provider,
+            home=state.home, ticker=body.ticker,
+            windows=[tuple(w) for w in body.windows],
+            start_params=body.start_params, max_generations=body.generations,
+            perturbation_pct=body.perturbation, interval=body.interval,
+            account_balance=body.account, risk_pct=body.risk_pct,
+        )
+        return result.to_dict()
+
+    @api.get("/rankings")
+    def get_rankings():
+        from src.agents.forker import load_all_rolling
+        return {"rankings": [r.to_dict() for r in load_all_rolling(state.home)]}
+
+    # ---- meta ----
+
+    @api.get("/config")
+    def get_config():
+        from src import __version__
+        from src.data_providers import DATA_PROVIDERS
+        return {
+            "version": __version__,
+            "home": state.home,
+            "data_providers": sorted(DATA_PROVIDERS),
+            "execution_providers": sorted(PROVIDERS),
+        }
 
     # ---- live ----
 
@@ -347,8 +454,26 @@ def make_app(home: str) -> FastAPI:
     return app
 
 
-def run_server(home: str, host: str = "127.0.0.1", port: int = 8787) -> None:
+def create_app() -> FastAPI:
+    """Zero-arg ASGI factory, for `uvicorn --factory src.server:create_app --reload`.
+
+    Resolves the data home the same way the CLI does, so MONEYMAKER_HOME is
+    still honoured. Uvicorn's reloader needs an importable zero-arg entry
+    point; make_app() takes an explicit home and cannot serve that role.
+    """
+    from src.config import get_home
+    return make_app(get_home())
+
+
+def run_server(home: str, host: str = "127.0.0.1", port: int = 8787,
+               reload: bool = False) -> None:
     import uvicorn
-    app = make_app(home)
     print(f"moneymaker API  http://{host}:{port}/api/  (data: {home})")
-    uvicorn.run(app, host=host, port=port)
+    if reload:
+        # The reloader re-imports in a subprocess, so it needs an import
+        # string rather than an already-constructed app object.
+        os.environ["MONEYMAKER_HOME"] = home
+        uvicorn.run("src.server:create_app", factory=True, host=host, port=port,
+                    reload=True, reload_dirs=[str(pathlib.Path(__file__).parent)])
+    else:
+        uvicorn.run(make_app(home), host=host, port=port)

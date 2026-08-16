@@ -1,53 +1,121 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Zap, ChevronDown, Play, Loader2 } from "lucide-react";
+import { Zap, ChevronDown, Play, Loader2, Layers, SlidersHorizontal, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/components/ui/toast";
 import { StrategyFlow } from "@/components/StrategyFlow";
-import { api, type Strategy, type BacktestResult } from "@/lib/api";
-import { fmtDollar, pnlColor } from "@/lib/utils";
+import { api, type Strategy, type BacktestResult, type MultiWindowResult, type AppConfig } from "@/lib/api";
+import { fmt, fmtDollar, fmtPct, pnlColor } from "@/lib/utils";
 
-function StrategyCard({ s }: { s: Strategy }) {
+/** Coerce an edited param string back to the type its default implies. */
+function coerce(raw: string, original: unknown): unknown {
+  if (typeof original === "number") {
+    const n = Number(raw);
+    return Number.isNaN(n) ? original : n;
+  }
+  if (typeof original === "boolean") return raw === "true";
+  return raw;
+}
+
+function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="rounded-md border p-2.5 text-center">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={`text-sm font-bold ${color ?? ""}`}>{value}</div>
+    </div>
+  );
+}
+
+function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ ticker: "ES=F", start: "2026-01-01", end: "2026-08-01", interval: "5m" });
+  const [showParams, setShowParams] = useState(false);
+  const [mode, setMode] = useState<"single" | "multi">("single");
+
+  const [form, setForm] = useState({
+    ticker: "ES=F", start: "2026-01-01", end: "2026-08-01", interval: "5m",
+    data_provider: "yfinance", windows: "2026-06-01:2026-07-01,2026-07-01:2026-08-01",
+  });
+  const [params, setParams] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [multi, setMulti] = useState<MultiWindowResult | null>(null);
 
-  async function runBacktest() {
+  // Seed the param editor from the strategy's declared defaults.
+  useEffect(() => {
+    setParams(Object.fromEntries(Object.entries(s.params).map(([k, v]) => [k, String(v)])));
+  }, [s]);
+
+  const changed = Object.entries(params).filter(
+    ([k, v]) => String(s.params[k]) !== v
+  );
+
+  async function runSingle() {
     setLoading(true);
-    setError(null);
+    setMulti(null);
     try {
-      const r = await api.backtest.run({ strategy: s.name, ...form });
+      const overrides = Object.fromEntries(
+        changed.map(([k, v]) => [k, coerce(v, s.params[k])])
+      );
+      const r = await api.backtest.run({
+        strategy: s.name, ticker: form.ticker, start: form.start, end: form.end,
+        interval: form.interval, data_provider: form.data_provider,
+        params: Object.keys(overrides).length ? overrides : undefined,
+      });
       setResult(r);
+      toast(`${s.name}: ${r.trade_count} trades, ${fmtDollar(r.total_pnl)}`,
+            r.total_pnl >= 0 ? "success" : "info");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error");
-    } finally {
-      setLoading(false);
+      toast(e instanceof Error ? e.message : "Backtest failed", "error");
     }
+    setLoading(false);
+  }
+
+  async function runMulti() {
+    const windows = form.windows.split(",").map((w) => w.trim()).filter(Boolean)
+      .map((w) => w.split(":").map((x) => x.trim()) as [string, string])
+      .filter(([a, b]) => a && b);
+    if (!windows.length) return toast("Enter windows as start:end,start:end", "error");
+    setLoading(true);
+    setResult(null);
+    try {
+      const r = await api.backtest.runMulti({
+        strategy: s.name, ticker: form.ticker, windows, interval: form.interval,
+      });
+      setMulti(r);
+      toast(`${windows.length} windows · ${fmtDollar(r.total_pnl)}`,
+            r.total_pnl >= 0 ? "success" : "info");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Multi-window backtest failed", "error");
+    }
+    setLoading(false);
   }
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       <Card className="overflow-hidden">
-        <CardHeader
-          className="cursor-pointer select-none"
-          onClick={() => setOpen((v) => !v)}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-primary" />
-              <CardTitle className="text-base">{s.name}</CardTitle>
+        <CardHeader className="cursor-pointer select-none" onClick={() => setOpen((v) => !v)}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <Zap className="h-4 w-4 shrink-0 text-primary" />
+              <CardTitle className="truncate text-base">{s.name}</CardTitle>
               <Badge variant={s.source === "built-in" ? "secondary" : "outline"}>{s.source}</Badge>
+              {Object.keys(s.params).length > 0 && (
+                <Badge variant="outline" className="hidden sm:inline-flex">
+                  {Object.keys(s.params).length} params
+                </Badge>
+              )}
             </div>
             <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             </motion.div>
           </div>
-          <CardDescription>{s.doc}</CardDescription>
+          <CardDescription className="line-clamp-1">{s.doc}</CardDescription>
         </CardHeader>
 
         <AnimatePresence>
@@ -62,49 +130,163 @@ function StrategyCard({ s }: { s: Strategy }) {
               <CardContent className="space-y-4 border-t pt-4">
                 <StrategyFlow strategyName={s.name} params={s.params} />
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {[
-                    { label: "Ticker", key: "ticker" as const, placeholder: "ES=F" },
-                    { label: "Start", key: "start" as const, placeholder: "2026-01-01" },
-                    { label: "End", key: "end" as const, placeholder: "2026-08-01" },
-                    { label: "Interval", key: "interval" as const, placeholder: "5m" },
-                  ].map(({ label, key, placeholder }) => (
-                    <div key={key} className="space-y-1">
-                      <Label className="text-xs">{label}</Label>
-                      <Input
-                        value={form[key]}
-                        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                        placeholder={placeholder}
-                        className="h-8 text-sm"
-                      />
-                    </div>
+                {/* mode switch */}
+                <div className="flex gap-1 rounded-md bg-muted p-1">
+                  {(["single", "multi"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                        mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                      }`}
+                    >
+                      {m === "single" ? "Single window" : "Multi-window"}
+                    </button>
                   ))}
                 </div>
 
-                <Button size="sm" onClick={runBacktest} disabled={loading} className="w-full">
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  {loading ? "Running…" : "Run Backtest"}
-                </Button>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Ticker</Label>
+                    <Input value={form.ticker} onChange={(e) => setForm((f) => ({ ...f, ticker: e.target.value }))}
+                           className="h-8 text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Interval</Label>
+                    <Input value={form.interval} onChange={(e) => setForm((f) => ({ ...f, interval: e.target.value }))}
+                           className="h-8 text-sm" />
+                  </div>
 
-                {error && (
-                  <p className="text-xs text-destructive bg-destructive/10 rounded px-3 py-2">{error}</p>
+                  {mode === "single" ? (
+                    <>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Start</Label>
+                        <Input value={form.start} onChange={(e) => setForm((f) => ({ ...f, start: e.target.value }))}
+                               className="h-8 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">End</Label>
+                        <Input value={form.end} onChange={(e) => setForm((f) => ({ ...f, end: e.target.value }))}
+                               className="h-8 text-sm" />
+                      </div>
+                      <div className="col-span-2 space-y-1">
+                        <Label className="text-xs">Data provider</Label>
+                        <Select value={form.data_provider}
+                                onValueChange={(v) => setForm((f) => ({ ...f, data_provider: v }))}>
+                          <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {(config?.data_providers ?? ["yfinance"]).map((p) => (
+                              <SelectItem key={p} value={p}>{p}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="col-span-2 space-y-1 sm:col-span-2">
+                      <Label className="text-xs">Windows</Label>
+                      <Input value={form.windows} onChange={(e) => setForm((f) => ({ ...f, windows: e.target.value }))}
+                             className="h-8 font-mono text-xs" placeholder="start:end,start:end" />
+                    </div>
+                  )}
+                </div>
+
+                {/* param editor */}
+                {Object.keys(s.params).length > 0 && (
+                  <div className="rounded-md border">
+                    <button
+                      onClick={() => setShowParams((v) => !v)}
+                      className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <span className="flex items-center gap-2">
+                        <SlidersHorizontal className="h-3.5 w-3.5" />
+                        Parameters
+                        {changed.length > 0 && (
+                          <Badge variant="secondary" className="text-[10px]">{changed.length} changed</Badge>
+                        )}
+                      </span>
+                      <motion.div animate={{ rotate: showParams ? 180 : 0 }}>
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </motion.div>
+                    </button>
+                    <AnimatePresence>
+                      {showParams && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
+                          <div className="space-y-2 border-t p-3">
+                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                              {Object.entries(s.params).map(([k, def]) => {
+                                const isChanged = String(def) !== params[k];
+                                return (
+                                  <div key={k} className="space-y-1">
+                                    <Label className={`text-[11px] ${isChanged ? "text-primary" : ""}`}>{k}</Label>
+                                    <Input
+                                      value={params[k] ?? ""}
+                                      onChange={(e) => setParams((p) => ({ ...p, [k]: e.target.value }))}
+                                      className={`h-7 font-mono text-xs ${isChanged ? "border-primary" : ""}`}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {changed.length > 0 && (
+                              <Button size="sm" variant="ghost" className="h-7 text-xs"
+                                      onClick={() => setParams(Object.fromEntries(
+                                        Object.entries(s.params).map(([k, v]) => [k, String(v)])))}>
+                                <RotateCcw className="h-3 w-3" /> Reset to defaults
+                              </Button>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 )}
 
+                <Button size="sm" className="w-full" disabled={loading}
+                        onClick={mode === "single" ? runSingle : runMulti}>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" />
+                           : mode === "single" ? <Play className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
+                  {loading ? "Running…" : mode === "single" ? "Run backtest" : "Run multi-window"}
+                </Button>
+
+                {/* single-window result */}
                 {result && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-3 gap-3">
-                    {[
-                      { label: "P&L", value: fmtDollar(result.total_pnl), color: pnlColor(result.total_pnl) },
-                      { label: "Trades", value: String(result.trade_count ?? "—") },
-                      { label: "Win Rate", value: result.win_rate != null ? (result.win_rate * 100).toFixed(1) + "%" : "—" },
-                    ].map(({ label, value, color }) => (
-                      <Card key={label}>
-                        <CardContent className="pt-3 pb-3 text-center">
-                          <div className="text-xs text-muted-foreground mb-1">{label}</div>
-                          <div className={`text-sm font-bold ${color ?? ""}`}>{value}</div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                    <div className="col-span-3 text-xs text-muted-foreground font-mono">{result.session_name}</div>
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <Metric label="P&L" value={fmtDollar(result.total_pnl)} color={pnlColor(result.total_pnl)} />
+                      <Metric label="Trades" value={String(result.trade_count)} />
+                      <Metric label="Win rate" value={fmtPct(result.win_rate)} />
+                      <Metric label="Bars" value={String(result.bars_seen ?? "—")} />
+                    </div>
+                    <p className="font-mono text-[11px] text-muted-foreground">{result.session_name}</p>
+                  </motion.div>
+                )}
+
+                {/* multi-window result */}
+                {multi && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <Metric label="Total P&L" value={fmtDollar(multi.total_pnl)} color={pnlColor(multi.total_pnl)} />
+                      <Metric label="Windows" value={String(multi.window_count ?? multi.windows?.length ?? 0)} />
+                      <Metric
+                        label="Profitable"
+                        value={multi.window_count
+                          ? `${multi.windows_profitable}/${multi.window_count}`
+                          : String(multi.windows_profitable ?? "—")}
+                      />
+                      <Metric label="P&L std" value={fmt(multi.pnl_std)} />
+                    </div>
+                    {multi.windows?.length > 0 && (
+                      <div className="space-y-1 rounded-md border p-2">
+                        {multi.windows.map((w, i) => (
+                          <div key={i} className="flex items-center justify-between text-[11px]">
+                            <span className="font-mono text-muted-foreground">{w.start} → {w.end}</span>
+                            <span className={pnlColor(w.total_pnl)}>{fmtDollar(w.total_pnl)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </CardContent>
@@ -118,20 +300,45 @@ function StrategyCard({ s }: { s: Strategy }) {
 
 export function Strategies() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
-    api.strategies.list().then((r) => { setStrategies(r.strategies); setLoading(false); }).catch(() => setLoading(false));
+    api.strategies.list()
+      .then((r) => setStrategies(r.strategies))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+    api.config.get().then(setConfig).catch(() => {});
   }, []);
 
+  const filtered = strategies.filter(
+    (s) => s.name.toLowerCase().includes(query.toLowerCase()) ||
+           s.doc.toLowerCase().includes(query.toLowerCase())
+  );
+
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold">Strategies</h1>
+    <div className="space-y-4 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Strategies</h1>
+          <p className="text-sm text-muted-foreground">
+            {strategies.length} available · expand one to tune parameters and backtest.
+          </p>
+        </div>
+        <Input value={query} onChange={(e) => setQuery(e.target.value)}
+               placeholder="Filter…" className="h-8 w-full max-w-56 text-sm" />
+      </div>
+
       {loading ? (
-        <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No strategies match “{query}”.</p>
       ) : (
         <div className="space-y-3">
-          {strategies.map((s) => <StrategyCard key={s.name} s={s} />)}
+          {filtered.map((s) => <StrategyCard key={s.name} s={s} config={config} />)}
         </div>
       )}
     </div>

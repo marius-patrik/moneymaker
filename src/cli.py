@@ -604,7 +604,13 @@ def cmd_upgrade(args):
 
 def cmd_server(args):
     from src.server import run_server
-    run_server(get_home(args.data_dir), args.host, args.port)
+    run_server(get_home(args.data_dir), args.host, args.port, reload=args.reload)
+
+
+def cmd_serve(args):
+    from src.serve import serve
+    sys.exit(serve(get_home(args.data_dir), host=args.host, port=args.port,
+                   ui_port=args.ui_port, prod=args.prod, no_ui=args.no_ui))
 
 
 # --------------------------------------------------------------------------
@@ -805,10 +811,24 @@ def main():
                                      "and sync bundled strategies.")
     p_upgrade.set_defaults(func=cmd_upgrade)
 
-    p_server = sub.add_parser("server", help="Run the HTTP+JSON API server.")
+    p_server = sub.add_parser("server", help="Run the FastAPI server.")
     p_server.add_argument("--host", default="127.0.0.1")
     p_server.add_argument("--port", type=int, default=8787)
+    p_server.add_argument("--reload", action="store_true",
+                          help="Auto-restart on source changes (development).")
     p_server.set_defaults(func=cmd_server)
+
+    p_serve = sub.add_parser(
+        "serve", help="Run the API and web UI together (single command).")
+    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--port", type=int, default=8787, help="API port.")
+    p_serve.add_argument("--ui-port", type=int, default=5173,
+                         help="Web UI dev-server port (dev mode only).")
+    p_serve.add_argument("--prod", action="store_true",
+                         help="Build the UI and serve it from the API on one port.")
+    p_serve.add_argument("--no-ui", action="store_true",
+                         help="Run the API only.")
+    p_serve.set_defaults(func=cmd_serve)
 
     args = parser.parse_args()
     args.func(args)

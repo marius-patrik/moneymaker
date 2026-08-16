@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { TrendingUp, TrendingDown, Activity, Layers, Wallet } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, Layers, Wallet, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { api, type Account, type LiveStatus } from "@/lib/api";
+import { api, type Account, type LiveStatus, type AppConfig } from "@/lib/api";
 import { fmtDollar, pnlColor } from "@/lib/utils";
 
 const fadeUp = {
@@ -33,11 +33,13 @@ export function Dashboard() {
   const [liveIds, setLiveIds] = useState<string[]>([]);
   const [liveStatuses, setLiveStatuses] = useState<Record<string, LiveStatus>>({});
   const [sessions, setSessions] = useState<string[]>([]);
+  const [config, setConfig] = useState<AppConfig | null>(null);
 
   useEffect(() => {
     api.accounts.list().then((r) => setAccounts(r.accounts)).catch(() => {});
     api.live.list().then((r) => setLiveIds(r.session_ids)).catch(() => {});
     api.sessions.list().then((r) => setSessions(r.sessions)).catch(() => {});
+    api.config.get().then(setConfig).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -51,18 +53,23 @@ export function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <div>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">
+          {config ? `moneymaker v${config.version} · ${config.home}` : " "}
+        </p>
+      </div>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard i={0} title="Accounts" value={String(accounts.length)} sub="registered" icon={Wallet} />
         <StatCard i={1} title="Total Balance" value={fmtDollar(totalBalance)} sub="across all accounts" icon={Layers} />
-        <StatCard i={2} title="Live Sessions" value={String(liveIds.length)} sub="active" icon={Activity} />
+        <StatCard i={2} title="Sessions" value={String(sessions.length)} sub="recorded runs" icon={FileText} />
         <StatCard
           i={3}
-          title="Session P&L"
-          value={fmtDollar(totalPnl)}
-          sub="live sessions"
-          icon={totalPnl >= 0 ? TrendingUp : TrendingDown}
+          title={liveIds.length > 0 ? "Live P&L" : "Live Sessions"}
+          value={liveIds.length > 0 ? fmtDollar(totalPnl) : "0"}
+          sub={liveIds.length > 0 ? `${liveIds.length} running` : "none active"}
+          icon={liveIds.length === 0 ? Activity : totalPnl >= 0 ? TrendingUp : TrendingDown}
         />
       </div>
 
