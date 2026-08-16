@@ -10,9 +10,9 @@ import threading
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -149,6 +149,19 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(ValueError)
+    def _value_error(request: Request, exc: ValueError):
+        """
+        Turn bad-input errors into JSON 400s.
+
+        The engine signals unusable input with ValueError — an unknown
+        ticker, a range with no bars, an interval the provider will not
+        serve. Unhandled, FastAPI returns a 500 whose body is the plain
+        string "Internal Server Error", so a client cannot parse a message
+        out of it and the user sees nothing at all.
+        """
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
 
     api = APIRouter(prefix="/api")
 

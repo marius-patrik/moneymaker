@@ -144,3 +144,28 @@ def test_api_still_wins_over_the_spa_fallback(client_with_ui):
     r = client_with_ui.get("/api/not-a-route")
     assert r.status_code == 404
     assert r.headers["content-type"].startswith("application/json")
+
+
+# ----------------------------------------------------------------- errors
+
+def test_bad_input_is_a_json_400_not_an_opaque_500(client):
+    """
+    The engine raises ValueError for unusable input (unknown ticker, a range
+    with no bars). Unhandled, FastAPI answers 500 with the bare string
+    "Internal Server Error" — not JSON, so a client cannot pull a message
+    out of it and the user is shown nothing at all.
+    """
+    r = client.post("/api/backtest", json={
+        "strategy": "trend_momentum",
+        "ticker": "NOT_A_REAL_TICKER_XYZ",
+        "start": "2025-01-01", "end": "2025-02-01", "interval": "1d",
+        "data_provider": "csv",           # no path → ValueError, no network
+    })
+    assert r.status_code == 400
+    assert r.headers["content-type"].startswith("application/json")
+    assert r.json()["detail"]             # a message the UI can surface
+
+
+def test_malformed_body_is_rejected_with_422(client):
+    r = client.post("/api/backtest", json={"strategy": "trend_momentum"})
+    assert r.status_code == 422           # pydantic: missing required fields

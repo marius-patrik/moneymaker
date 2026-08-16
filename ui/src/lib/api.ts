@@ -1,14 +1,39 @@
 const BASE = "/api";
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.detail || json.error || res.statusText);
-  return json as T;
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // fetch only rejects on a transport failure — the server is down or
+    // unreachable. Say that, rather than surfacing "Failed to fetch".
+    throw new Error("Cannot reach the server. Is it still running?");
+  }
+
+  // Not every error response is JSON: an unhandled exception yields the
+  // plain string "Internal Server Error", and res.json() would throw on it,
+  // replacing a useful message with a parse error.
+  const raw = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = null;
+  }
+
+  if (!res.ok) {
+    const detail =
+      (parsed as { detail?: string; error?: string } | null)?.detail ??
+      (parsed as { error?: string } | null)?.error ??
+      (raw && raw.length < 300 ? raw : "") ??
+      "";
+    throw new Error(detail || `${res.status} ${res.statusText}`);
+  }
+  return parsed as T;
 }
 
 const get = <T>(path: string) => req<T>("GET", path);
