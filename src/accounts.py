@@ -119,18 +119,31 @@ class AccountManager:
     live balance ultimately comes from the broker itself.
     """
 
-    def __init__(self, home: str):
+    def __init__(self, home: str, ephemeral: bool = False):
+        """
+        ephemeral=True keeps every account in memory and never touches
+        accounts.json. Backtests, grid search and fork-eval each need a
+        throwaway account per run purely to hold a balance; persisting those
+        buried the real accounts under hundreds of scratch entries.
+        """
+        self.ephemeral = ephemeral
+        self._mem: dict = {}
         self.path = os.path.join(home, "accounts.json")
-        if not os.path.exists(self.path):
+        if not ephemeral and not os.path.exists(self.path):
             self._write({})
 
     def _read(self) -> dict:
+        if self.ephemeral:
+            return self._mem
         if not os.path.exists(self.path):
             return {}
         with open(self.path) as f:
             return json.load(f)
 
     def _write(self, data: dict) -> None:
+        if self.ephemeral:
+            self._mem = data
+            return
         with open(self.path, "w") as f:
             json.dump(data, f, indent=2)
 
@@ -168,3 +181,22 @@ class AccountManager:
         data = self._read()
         data.pop(account_id, None)
         self._write(data)
+
+    def prune(self, prefix: str = "mw_", dry_run: bool = True) -> list[AccountInfo]:
+        """
+        Remove accounts whose name starts with `prefix`.
+
+        Multi-window backtests used to persist one account per window, which
+        left hundreds of `mw_*` entries behind. Those runs are now ephemeral,
+        so this only has to clean up what earlier versions wrote.
+
+        Returns the accounts matched; with dry_run=True nothing is deleted.
+        """
+        data = self._read()
+        matched = [AccountInfo(**v) for v in data.values()
+                   if str(v.get("name", "")).startswith(prefix)]
+        if not dry_run and matched:
+            for acct in matched:
+                data.pop(acct.account_id, None)
+            self._write(data)
+        return matched

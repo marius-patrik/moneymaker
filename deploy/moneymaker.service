@@ -1,0 +1,34 @@
+# systemd unit for the moneymaker server (Linux).
+#
+# Install with `moneymaker service install`, which fills in the placeholders
+# below and writes the result to ~/.config/systemd/user/. Editing this file
+# in place does nothing on its own — it is a template.
+#
+# Runs `serve --prod`: the UI is built and served by the API on one port, so
+# there is no bun process to supervise and nothing depends on a dev server.
+
+[Unit]
+Description=moneymaker trading engine (API + web UI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__REPO__
+Environment=MONEYMAKER_HOME=__HOME__
+Environment=PATH=__PATH__
+ExecStart=__PYTHON__ -m src.cli serve --prod --host __HOST__ --port __PORT__
+
+# serve exits non-zero if either child dies, so always-restart is what we want.
+Restart=always
+RestartSec=10
+
+StandardOutput=append:__LOGDIR__/server.log
+StandardError=append:__LOGDIR__/server.error.log
+
+# The engine only needs its own data directory.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

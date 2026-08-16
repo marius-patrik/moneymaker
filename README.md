@@ -77,6 +77,8 @@ src/                                Python package (import as `src.*`)
   optimizer.py        grid-search optimizer with train/test split
   econ_calendar.py    economic release calendar (FRED, BLS stub, Simulated)
   server.py           FastAPI app — /api routes + serves ui/dist in production
+  serve.py            `serve` — runs API + UI as one supervised process tree
+  service.py          `service` — launchd / systemd install and control
   cli.py              argparse CLI entry point (command: `moneymaker`)
   agents/
     forker.py         fork_and_eval() + rolling_fork_eval() — compare N strategy variants
@@ -102,6 +104,10 @@ strategies/                         bundled strategies (loaded at runtime)
   vwap_reversion.py                 intraday VWAP mean-reversion with regime filter
   trend_momentum.py                 daily MA crossover (profitable on GC=F, gc_evolved params)
   example_momentum.py               example/template for custom strategies
+
+deploy/                             service-manager templates
+  com.moneymaker.server.plist       launchd agent (macOS)
+  moneymaker.service                systemd user unit (Linux)
 
 ui/                                 React + TypeScript web UI (Bun + RSBuild)
   src/
@@ -150,6 +156,8 @@ moneymaker accounts create --name "aggressive" --balance 5000
 moneymaker accounts create --name "conservative" --balance 50000 --provider simulated
 moneymaker accounts list
 moneymaker accounts delete --account-id <id>
+moneymaker accounts prune          # report leftover scratch accounts
+moneymaker accounts prune --yes    # and delete them
 ```
 
 Credentials are never stored in plaintext by default:
@@ -328,26 +336,56 @@ A React + TypeScript dashboard lives in `ui/`. Stack: Bun, RSBuild, Tailwind
 CSS, shadcn/ui, Motion (animation), Dagre + React Flow (strategy pipeline
 diagrams), Lucide (icons), Recharts (P&L charts).
 
-```
-cd ui
-bun install
-bun run dev      # dev server on :5173, proxies /api → :8787
-```
-
-Run the API server alongside it (`moneymaker server`) and open
-http://localhost:5173.
-
-For a single-origin production setup, build the UI and let FastAPI serve it:
+**One command runs everything:**
 
 ```
-cd ui && bun run build
-moneymaker server --port 8787     # UI now at http://localhost:8787
+moneymaker serve            # API on :8787, UI on :5173, both hot-reloading
+moneymaker serve --prod     # builds the UI; API serves it on :8787 alone
+moneymaker serve --no-ui    # API only
 ```
+
+`serve` supervises both processes: logs are prefixed and interleaved, Ctrl+C
+stops both, and if either child dies the command exits non-zero — which is
+what lets a service manager restart it. On first run it installs the UI
+dependencies automatically.
+
+To work on the frontend alone, `cd ui && bun run dev` still works; it proxies
+`/api` to `:8787`.
 
 Pages: **Dashboard** (accounts, balances, live sessions), **Strategies**
-(expandable cards with a pipeline diagram and inline backtest runner),
-**Live** (start/stop/monitor sessions, polls every 3s), **Sessions** (trade
-tables with cumulative P&L charts), **Accounts** (create and list).
+(pipeline diagram, editable parameters, single- and multi-window backtests),
+**Research** (fork-eval rankings, parameter evolution, stored rolling
+rankings), **Live** (start/stop/monitor sessions, polls every 3s),
+**Sessions** (trade tables with cumulative P&L charts), **Accounts**
+(create, search, delete, prune).
+
+`Cmd/Ctrl+B` collapses the sidebar; `Cmd/Ctrl+,` opens settings.
+
+## Running as a service
+
+`moneymaker service` installs the engine as a background service — launchd
+on macOS, a systemd **user** unit on Linux — that starts at login and
+restarts if it exits. It runs `serve --prod`, so the UI and API share one
+port and there is no dev server to supervise.
+
+```
+moneymaker service install      # write the unit, load it, start it
+moneymaker service status       # is it running, what pid, last exit code
+moneymaker service restart
+moneymaker service stop
+moneymaker service uninstall
+```
+
+Templates live in `deploy/`; `install` fills in this machine's absolute
+paths (interpreter, repo, data dir, `PATH` including bun) and writes the
+result to `~/Library/LaunchAgents/` or `~/.config/systemd/user/`. Editing
+the templates directly has no effect — re-run `install` to apply changes.
+
+Logs go to `<data-dir>/logs/server.log` and `server.error.log`.
+
+These are user-level services: no sudo, nothing system-wide. On Linux a user
+service stops at logout unless lingering is enabled, and `install` prints
+the `loginctl enable-linger` command rather than doing it for you.
 
 ## Testing
 
@@ -356,8 +394,9 @@ pytest
 ```
 
 The test suite runs entirely against synthetic price data — no network
-calls, no live yfinance requests. All 45 tests pass on Python 3.11 and 3.12.
-CI runs on every push via GitHub Actions (`.github/workflows/ci.yml`).
+calls, no live yfinance requests. All 48 tests pass on Python 3.11 and 3.12.
+CI runs on every push via GitHub Actions (`.github/workflows/ci.yml`), which
+also typechecks and builds the web UI.
 
 ## Known limitations
 

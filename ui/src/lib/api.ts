@@ -133,6 +133,9 @@ export const api = {
     create: (body: { name: string; provider?: string; starting_balance?: number }) =>
       post<Account>("/accounts", body),
     remove: (id: string) => del<{ deleted: string }>(`/accounts/${id}`),
+    prune: (prefix = "mw_", dryRun = true) =>
+      post<{ matched: number; deleted: number; dry_run: boolean; sample: string[] }>(
+        `/accounts/prune?prefix=${encodeURIComponent(prefix)}&dry_run=${dryRun}`, {}),
   },
   credentials: {
     list: () => get<{ credentials: Record<string, Record<string, string>> }>("/credentials"),

@@ -175,3 +175,57 @@ def test_default_objective_scores_no_trades_as_worst(home):
     profitable_summary = {"valid_windows": 1, "mean_pnl_per_window": 100.0,
                            "pnl_stdev": 0.0, "pct_windows_profitable": 1.0}
     assert default_objective(empty_summary) < default_objective(profitable_summary)
+
+
+def test_multiwindow_does_not_persist_scratch_accounts(home):
+    """
+    Multi-window runs used to create one *persisted* account per window,
+    which meant a grid search left hundreds of `mw_*` entries in
+    accounts.json. Those accounts are scratch space for the backtest, so
+    they must stay in memory.
+    """
+    from src.accounts import AccountManager
+
+    before = len(AccountManager(home).list())
+    data_fn = make_synthetic_data_fn({
+        "2026-08-01": WINNING_DAY_PRICES,
+        "2026-08-10": LOSING_DAY_PRICES,
+    })
+    run_multi_window_backtest(
+        strategy_factory=RetailSalesSpikeStrategy,
+        provider_name="simulated", home=home, ticker="TEST",
+        windows=[("2026-08-01", "2026-08-01x"), ("2026-08-10", "2026-08-10x")],
+        get_data_fn=data_fn,
+    )
+    assert len(AccountManager(home).list()) == before
+
+
+def test_prune_removes_only_matching_accounts(home):
+    from src.accounts import AccountManager
+
+    mgr = AccountManager(home)
+    mgr.create("mw_scratch_one", "simulated")
+    mgr.create("mw_scratch_two", "simulated")
+    keep = mgr.create("my-real-account", "simulated")
+
+    # Dry run reports without deleting.
+    assert len(mgr.prune(dry_run=True)) == 2
+    assert len(mgr.list()) == 3
+
+    assert len(mgr.prune(dry_run=False)) == 2
+    remaining = mgr.list()
+    assert [a.account_id for a in remaining] == [keep.account_id]
+
+
+def test_ephemeral_account_manager_never_writes(tmp_path):
+    """An ephemeral manager must not create or touch accounts.json."""
+    import os
+    from src.accounts import AccountManager
+
+    home = str(tmp_path / "eph")
+    os.makedirs(home, exist_ok=True)
+    mgr = AccountManager(home, ephemeral=True)
+    mgr.create("scratch", "simulated")
+
+    assert len(mgr.list()) == 1
+    assert not os.path.exists(os.path.join(home, "accounts.json"))

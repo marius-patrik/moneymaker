@@ -52,6 +52,20 @@ implement `on_secondary_bar(ctx, bar, ticker)` to accumulate confirmation signal
 
 ## Engine / infrastructure
 
+### Scratch-account spam (DONE 2026-08-16)
+`run_multi_window_backtest` persisted one account per window, so grid search
+and fork-eval (which call it in a loop) left 564 `mw_*` entries in
+accounts.json. `AccountManager(ephemeral=True)` keeps scratch accounts in
+memory; `make_provider(..., ephemeral=True)` opts in. `accounts prune`
+(CLI + API + UI button) cleans up what older versions wrote. Covered by
+three regression tests.
+
+### Service manager (DONE 2026-08-16)
+`moneymaker service install|start|stop|restart|status|uninstall` wraps
+launchd (macOS) and systemd user units (Linux). Templates in `deploy/`;
+install renders absolute paths for this machine. Runs `serve --prod`.
+User-level only — no sudo. Auto-restart verified by killing the process.
+
 ### Data directory default (DONE 2026-08-16)
 Default data home is `.data/` under the repo root (gitignored, contents excluded via
 `.data/*` + `!.data/.gitkeep`). `MONEYMAKER_HOME` env var or `--data-dir` CLI flag

@@ -27,10 +27,11 @@ class SimulatedExecutionProvider(ExecutionProvider):
     is_live = False
 
     def __init__(self, home: str, credentials: Optional[CredentialStore] = None,
-                 slippage_pct: float = 0.0005):
+                 slippage_pct: float = 0.0005, ephemeral: bool = False):
         super().__init__(home, credentials)
         self.slippage_pct = slippage_pct
-        self.accounts = AccountManager(home)
+        # ephemeral=True: scratch accounts stay in memory (see AccountManager).
+        self.accounts = AccountManager(home, ephemeral=ephemeral)
 
     def authenticate(self) -> None:
         return None  # nothing to authenticate — there's no broker here

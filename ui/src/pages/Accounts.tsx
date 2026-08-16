@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Wallet, Plus, Loader2, Trash2, Search } from "lucide-react";
+import { Wallet, Plus, Loader2, Trash2, Search, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,7 @@ export function Accounts() {
   const [query, setQuery] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
   const [limit, setLimit] = useState(24);
+  const [pruning, setPruning] = useState(false);
 
   useEffect(() => {
     api.accounts.list()
@@ -82,6 +83,27 @@ export function Accounts() {
 
   const shown = filtered.slice(0, limit);
   const totalBalance = filtered.reduce((s, a) => s + (a.starting_balance ?? 0), 0);
+
+  /** Two-step: report what matches, then delete once the user confirms. */
+  async function prune() {
+    setPruning(true);
+    try {
+      const dry = await api.accounts.prune("mw_", true);
+      if (dry.matched === 0) {
+        toast("No scratch accounts to prune.", "info");
+      } else if (window.confirm(
+        `Delete ${dry.matched} scratch account(s) left by older multi-window backtests?\n\n` +
+        `e.g. ${dry.sample.slice(0, 3).join(", ")}`
+      )) {
+        const r = await api.accounts.prune("mw_", false);
+        setAccounts((prev) => prev.filter((a) => !a.name.startsWith("mw_")));
+        toast(`Deleted ${r.deleted} scratch account(s)`, "success");
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Prune failed", "error");
+    }
+    setPruning(false);
+  }
 
   async function remove(a: Account) {
     setDeleting(a.account_id);
@@ -114,6 +136,10 @@ export function Accounts() {
               className="h-8 w-56 pl-8 text-sm"
             />
           </div>
+          <Button size="sm" variant="outline" onClick={prune} disabled={pruning}>
+            {pruning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Prune scratch
+          </Button>
           <CreateDialog onCreated={(a) => setAccounts((prev) => [...prev, a])} />
         </div>
       </div>

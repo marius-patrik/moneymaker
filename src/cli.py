@@ -116,6 +116,23 @@ def cmd_accounts_delete(args):
     print(f"Deleted account {args.account_id} (if it existed).")
 
 
+def cmd_accounts_prune(args):
+    home = get_home(args.data_dir)
+    mgr = AccountManager(home)
+    matched = mgr.prune(prefix=args.prefix, dry_run=not args.yes)
+    if not matched:
+        print(f"No accounts matching prefix '{args.prefix}'.")
+        return
+    if args.yes:
+        print(f"Deleted {len(matched)} account(s) matching '{args.prefix}'.")
+    else:
+        for a in matched[:10]:
+            print(f"  {a.account_id}  {a.name}")
+        if len(matched) > 10:
+            print(f"  … and {len(matched) - 10} more")
+        print(f"\n{len(matched)} account(s) would be deleted. Re-run with --yes to confirm.")
+
+
 # --------------------------------------------------------------------------
 # credentials
 # --------------------------------------------------------------------------
@@ -613,6 +630,12 @@ def cmd_serve(args):
                    ui_port=args.ui_port, prod=args.prod, no_ui=args.no_ui))
 
 
+def cmd_service(args):
+    from src.service import dispatch
+    dispatch(args.action, get_home(args.data_dir), host=args.host,
+             port=args.port, no_start=args.no_start)
+
+
 # --------------------------------------------------------------------------
 # CLI wiring
 # --------------------------------------------------------------------------
@@ -650,6 +673,14 @@ def main():
     p_acct_delete = acct_sub.add_parser("delete", help="Delete an account.")
     p_acct_delete.add_argument("--account-id", required=True)
     p_acct_delete.set_defaults(func=cmd_accounts_delete)
+
+    p_acct_prune = acct_sub.add_parser(
+        "prune", help="Delete leftover scratch accounts (dry run unless --yes).")
+    p_acct_prune.add_argument("--prefix", default="mw_",
+                              help="Delete accounts whose name starts with this (default: mw_).")
+    p_acct_prune.add_argument("--yes", action="store_true",
+                              help="Actually delete; without it this only reports.")
+    p_acct_prune.set_defaults(func=cmd_accounts_prune)
 
     # credentials
     p_cred = sub.add_parser("credentials", help="Manage provider credentials.")
@@ -829,6 +860,17 @@ def main():
     p_serve.add_argument("--no-ui", action="store_true",
                          help="Run the API only.")
     p_serve.set_defaults(func=cmd_serve)
+
+    p_svc = sub.add_parser(
+        "service",
+        help="Install/manage moneymaker as a background service (launchd or systemd).")
+    p_svc.add_argument("action",
+                       choices=["install", "uninstall", "start", "stop", "restart", "status"])
+    p_svc.add_argument("--host", default="127.0.0.1")
+    p_svc.add_argument("--port", type=int, default=8787)
+    p_svc.add_argument("--no-start", action="store_true",
+                       help="With `install`: set it up but don't start it yet.")
+    p_svc.set_defaults(func=cmd_service)
 
     args = parser.parse_args()
     args.func(args)

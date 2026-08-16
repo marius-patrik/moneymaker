@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent for the moneymaker server (macOS).
+
+  Install with `moneymaker service install`, which fills in the placeholders
+  below and writes the result to ~/Library/LaunchAgents/. Editing this file
+  in place does nothing on its own — it is a template.
+
+  Runs `serve --prod`: the UI is built and served by the API on one port, so
+  there is no bun process to supervise and nothing depends on a dev server.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.moneymaker.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>-m</string>
+        <string>src.cli</string>
+        <string>serve</string>
+        <string>--prod</string>
+        <string>--host</string>
+        <string>__HOST__</string>
+        <string>--port</string>
+        <string>__PORT__</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MONEYMAKER_HOME</key>
+        <string>__HOME__</string>
+        <key>PATH</key>
+        <string>__PATH__</string>
+    </dict>
+
+    <!-- Start at login and restart if it exits. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Back off instead of hot-looping when startup fails. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>__LOGDIR__/server.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOGDIR__/server.error.log</string>
+</dict>
+</plist>

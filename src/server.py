@@ -222,6 +222,15 @@ def make_app(home: str) -> FastAPI:
                        starting_balance=body.starting_balance, is_live=body.is_live)
         return a.to_dict()
 
+    @api.post("/accounts/prune")
+    def prune_accounts(prefix: str = "mw_", dry_run: bool = True):
+        """Clean up scratch accounts left by older multi-window backtests."""
+        mgr = AccountManager(state.home)
+        matched = mgr.prune(prefix=prefix, dry_run=dry_run)
+        return {"matched": len(matched), "deleted": 0 if dry_run else len(matched),
+                "dry_run": dry_run,
+                "sample": [a.name for a in matched[:5]]}
+
     @api.delete("/accounts/{account_id}")
     def delete_account(account_id: str):
         mgr = AccountManager(state.home)

@@ -105,7 +105,10 @@ def run_multi_window_backtest(
         try:
             df = get_data_fn(ticker, start, end, interval)
             strategy = strategy_factory()
-            provider = make_provider(provider_name, home)
+            # Scratch account per window — in memory, so repeated multi-window
+            # runs (and the grid search / fork-eval that call this in a loop)
+            # do not accumulate hundreds of entries in accounts.json.
+            provider = make_provider(provider_name, home, ephemeral=True)
             account = provider.create_account(
                 f"mw_{strategy.name}_{start}_{end}", starting_balance=account_balance
             )
