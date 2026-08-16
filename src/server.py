@@ -119,6 +119,10 @@ class EvolveBody(BaseModel):
     start_params: Optional[dict[str, Any]] = None
 
 
+class SetHomeBody(BaseModel):
+    home: str
+
+
 class ManualOrderBody(BaseModel):
     ticker: str
     direction: str                     # "long" | "short"
@@ -716,14 +720,42 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
     @api.get("/config")
     def get_config():
         from src import __version__
+        from src.config import _DEFAULT_HOME, home_source
         from src.data_providers import DATA_PROVIDERS
         return {
             "version": __version__,
             "home": state.home,
-            "home_source": ("MONEYMAKER_HOME" if os.environ.get("MONEYMAKER_HOME")
-                            else "default"),
+            "home_source": home_source(),
+            "default_home": _DEFAULT_HOME,
             "data_providers": sorted(DATA_PROVIDERS),
             "execution_providers": sorted(PROVIDERS),
+        }
+
+    @api.put("/config/home")
+    def set_config_home(body: SetHomeBody):
+        """
+        Point the app at a different data directory from next start.
+
+        The running process keeps its current home: swapping it live would
+        leave open files and cached state pointing at the old location. An
+        env var or --data-dir still wins, so say so rather than let the
+        setting look ignored.
+        """
+        from src.config import SUBDIRS, home_source, set_home_preference
+
+        target = pathlib.Path(body.home).expanduser()
+        try:
+            for sub in SUBDIRS:
+                (target / sub).mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise HTTPException(400, f"cannot use that directory: {e}")
+
+        saved = set_home_preference(str(target))
+        overridden = home_source() in ("--data-dir", "MONEYMAKER_HOME")
+        return {
+            "home": saved,
+            "restart_required": True,
+            "overridden_by": home_source() if overridden else None,
         }
 
     @api.get("/stats")

@@ -158,6 +158,7 @@ export interface AppConfig {
   version: string;
   home: string;
   home_source?: string;
+  default_home?: string;
   data_providers: string[];
   execution_providers: string[];
 }
@@ -221,6 +222,9 @@ export const api = {
   },
   config: {
     get: () => get<AppConfig>("/config"),
+    setHome: (home: string) =>
+      req<{ home: string; restart_required: boolean; overridden_by: string | null }>(
+        "PUT", "/config/home", { home }),
   },
   accounts: {
     list: () => get<{ accounts: Account[] }>("/accounts"),

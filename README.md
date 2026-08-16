@@ -117,6 +117,7 @@ ui/                                 React + TypeScript web UI (Bun + RSBuild)
     lib/api.ts                      typed client for the /api surface
     lib/useJob.ts                   polls a background job to completion
     lib/useTheme.ts                 light/dark/system theme, persisted
+    components/ui/animated-icon.tsx motion wrappers for Lucide icons
     lib/utils.ts                    cn() + number/currency formatters
     components/ui/                  shadcn/ui primitives
     components/layout/Sidebar.tsx   desktop rail + mobile drawer
@@ -137,9 +138,12 @@ tests/
 ## Data directory
 
 Everything the engine persists lives under `.data/` in the repository root by
-default — gitignored so no two clones share state by accident. Override with
-`--data-dir` or the `MONEYMAKER_HOME` env var (e.g. `export MONEYMAKER_HOME=~/.moneymaker`
-for a shared directory across multiple clones).
+default — gitignored so no two clones share state by accident.
+
+Resolution order, first match wins: `--data-dir`, then `MONEYMAKER_HOME`,
+then the preference saved from Settings (`~/.config/moneymaker/config.json`),
+then the default. The Settings dialog shows which one is currently in force,
+and a change there applies on the next server restart.
 
 ```
 .data/                             default — gitignored (contents), .gitkeep only
@@ -332,8 +336,19 @@ POST /api/fork-eval       {strategy, ticker, windows, interval?}       → Job
 POST /api/evolve          {strategy, ticker, windows, generations?}    → Job
 GET  /api/rankings
 GET  /api/jobs                 GET /api/jobs/<id>   POST /api/jobs/<id>/cancel
+GET  /api/stats                aggregate P&L, win rate, profit factor
+POST /api/orders          {ticker, direction, size, account_id?}  — manual order
+GET  /api/quote/<ticker>       last price
+POST /api/strategies      {name, source?, overwrite?}  — create a strategy
+GET  /api/strategies/<name>/source     DELETE /api/strategies/<name>
+PUT  /api/config/home     {home}  — data directory, applied on restart
 POST /api/accounts/prune?prefix=mw_&dry_run=true
+DELETE /api/accounts/<id>      DELETE /api/credentials/<provider>
 ```
+
+`GET /api/providers` groups sources by role — `data` (market prices),
+`news` (economic calendars) and `execution` (order routing) — and omits
+scaffolded stubs unless `?include_stubs=true`.
 
 ### Background jobs
 

@@ -168,3 +168,16 @@ wide tables scroll in-container, dialogs are viewport-bounded with dvh.
 `_dist_is_fresh()` compares ui/dist against every build input, so a service
 restart with an unchanged UI skips the bundle step: ~35s → 5s.
 `--force-build` overrides.
+
+### Trading-desk UI (DONE 2026-08-16)
+Live → Trade: manual order ticket (POST /api/orders, GET /api/quote),
+strategy launch, and open positions. Strategy cards also gained "Go live".
+Sessions merged into Accounts as a tab. Dashboard driven by GET /api/stats.
+Strategy creation from the UI (POST /api/strategies) compiles and load-checks
+the source before saving. Providers grouped data/news/execution with stubs
+hidden. Data directory settable from Settings, applied on restart.
+
+Bugs fixed along the way: balances read `starting_balance` where the record
+stores `balance` (dashboard showed NaN, cards 0 — no data was lost); the
+`popover` colour was defined in CSS but never registered in tailwind.config,
+so every dropdown rendered transparent.
