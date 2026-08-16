@@ -37,6 +37,29 @@ a dashboard that isn't a terminal.
 
 ---
 
+## Versioned asymmetric interaction network for strategies
+
+Treat strategies not as independent units but as nodes in a versioned interaction
+network: strategies observe each other's outputs, votes, or confidence signals,
+and the network topology determines how individual signals combine into a final
+position decision. "Asymmetric" because the interaction weights don't need to be
+symmetric — a fade strategy might discount the continuation strategy's signal
+more than vice versa, based on historical correlation.
+
+This is the right frame for the long-run architecture but requires:
+(a) a working signal layer (individual strategies producing reliable signal);
+(b) enough historical trades per strategy to learn interaction weights;
+(c) a versioning scheme for the network topology itself.
+
+None of those prerequisites are met yet. Defer until individual strategy
+evaluation (fork-eval / evolve cycles) produces at least one consistently
+profitable strategy on real data.
+
+**Trigger:** one or more strategies produce a positive objective score on
+walk-forward held-out windows; begin scoping the interaction layer then.
+
+---
+
 ## Stub provider implementation (trading212_demo, ibkr_paper, oanda_practice)
 
 Each stub needs a separate, explicit session discussion before wiring any real

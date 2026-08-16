@@ -102,6 +102,29 @@ open position at the last bar price). Related to P006.
 
 ## Install / packaging
 
+**P011 — Continuous rolling evaluation** `[proposed]`
+`fork-eval` and `evolve` are currently one-shot commands. An approach not working
+on one window set doesn't mean it won't work on a different one — a strategy that
+lost on noisy days might win on genuine release days, and vice versa. Proposal:
+
+1. Add a `--rolling` flag to `fork-eval` and a `--retrain-every N` flag to `evolve`.
+   As new event days accumulate in the historical window, automatically re-score all
+   known FORKS variants and track score trajectory over time (improving? degrading?).
+2. Store rolling results in `~/.moneymaker/evaluations/<strategy>_rolling.json`
+   alongside per-run session JSONs. Each entry: window range, all fork scores.
+3. A `rankings` CLI command that reads all evaluation files and shows each strategy's
+   score trend — is it getting better or worse as more data lands?
+
+The goal: no strategy gets written off from a single window, and no strategy stays
+in the running on luck from a single good window. Score trajectories matter more than
+point estimates.
+
+Dependencies: none (all primitives exist). Moderate implementation effort.
+
+---
+
+## Install / packaging
+
 **P-INSTALL — Strategy install + merge mechanism** `[proposed]`
 Currently bundled strategies are loaded live from the repo's `strategies/` dir.
 This breaks in a pip-installed (non-editable) scenario. Proposal:
