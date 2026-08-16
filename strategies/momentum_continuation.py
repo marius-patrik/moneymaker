@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from moneymaker.strategy import Bar, Strategy, StrategyContext
+from engine.strategy import Bar, Strategy, StrategyContext
 
 
 class MomentumContinuationStrategy(Strategy):

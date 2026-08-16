@@ -9,10 +9,10 @@ import datetime as dt
 import pandas as pd
 import pytest
 
-from moneymaker.config import get_home
-from moneymaker.multiwindow import run_multi_window_backtest
-from moneymaker.optimizer import default_objective, grid_search
-from moneymaker.strategy import RetailSalesSpikeStrategy
+from engine.config import get_home
+from engine.multiwindow import run_multi_window_backtest
+from engine.optimizer import default_objective, grid_search
+from engine.strategy import RetailSalesSpikeStrategy
 
 
 @pytest.fixture

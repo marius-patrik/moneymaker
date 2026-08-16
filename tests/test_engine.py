@@ -10,17 +10,17 @@ import datetime as dt
 
 import pytest
 
-from moneymaker.accounts import AccountManager, CredentialStore
-from moneymaker.config import get_home
-from moneymaker.engine import Simulator
-from moneymaker.logger import TradeLogger
-from moneymaker.providers import PROVIDERS, make_provider
-from moneymaker.providers.ibkr import IBKRPaperProvider
-from moneymaker.providers.oanda import OANDAPracticeProvider
-from moneymaker.providers.simulated import SimulatedExecutionProvider
-from moneymaker.providers.trading212 import Trading212DemoProvider
-from moneymaker.risk import RiskManager
-from moneymaker.strategy import Bar, RetailSalesSpikeStrategy, load_strategies
+from engine.accounts import AccountManager, CredentialStore
+from engine.config import get_home
+from engine.engine import Simulator
+from engine.logger import TradeLogger
+from engine.providers import PROVIDERS, make_provider
+from engine.providers.ibkr import IBKRPaperProvider
+from engine.providers.oanda import OANDAPracticeProvider
+from engine.providers.simulated import SimulatedExecutionProvider
+from engine.providers.trading212 import Trading212DemoProvider
+from engine.risk import RiskManager
+from engine.strategy import Bar, RetailSalesSpikeStrategy, load_strategies
 
 
 @pytest.fixture
@@ -264,7 +264,7 @@ def test_drop_in_strategy_loading(home, tmp_path):
     strat_dir_file = f"{home}/strategies/custom_test_strategy.py"
     with open(strat_dir_file, "w") as f:
         f.write(
-            "from moneymaker.strategy import Strategy, StrategyContext, Bar\n"
+            "from engine.strategy import Strategy, StrategyContext, Bar\n"
             "class CustomTest(Strategy):\n"
             "    \"\"\"A custom test strategy.\"\"\"\n"
             "    name = 'custom_test'\n"
@@ -398,13 +398,13 @@ def test_load_strategies_two_tier(home, tmp_path):
     """Repo-bundled strategies/ loads first; user drop-in wins on name collision."""
     import importlib.util
     import pathlib
-    from moneymaker.strategy import load_strategies, Strategy, StrategyContext, Bar
+    from engine.strategy import load_strategies, Strategy, StrategyContext, Bar
 
     # Write a user drop-in that shadows a known name
     user_dir = pathlib.Path(home) / "strategies"
     user_dir.mkdir(parents=True, exist_ok=True)
     (user_dir / "override.py").write_text(
-        "from moneymaker.strategy import Strategy, StrategyContext, Bar\n"
+        "from engine.strategy import Strategy, StrategyContext, Bar\n"
         "class OverrideStrategy(Strategy):\n"
         "    name = 'override_sentinel'\n"
         "    def on_bar(self, ctx, bar): pass\n"

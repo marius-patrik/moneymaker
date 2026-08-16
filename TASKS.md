@@ -29,8 +29,18 @@ Session: 2026-08-16 — Scaffolding + conventions + strategy signal quality
 - [x] Finding: 0% win rate on real release days — spike FADES, continuation approach is wrong
 - [x] Commit + push Phase 2 with CONTEXT.md + PROPOSALS.md update (fade approach P008a)
 
-## Phase 3: Architectural decisions [discussion required]
+## Phase 3: Strategy install + versioning [in progress]
 
-- [ ] Discuss P-INSTALL strategy install mechanism (see PROPOSALS.md, QUESTIONS.md Q2)
-- [ ] Discuss P-VERSION versioning system
-- [ ] Implement once design confirmed
+Design approved (2026-08-16):
+- Merge on conflict: skip modified files, report them, user decides → context-dependent
+- Repo can be public for upgrade command
+
+- [x] Rename moneymaker/ → engine/ (package dir); update all imports + pyproject.toml
+- [x] engine/__init__.py — __version__ via importlib.metadata
+- [x] engine/installer.py — hash-tracked install/upgrade logic + manifest
+- [x] engine/config.py — version tracking, notice on version change
+- [x] engine/cli.py — install-strategies, upgrade-strategies (--force), upgrade commands
+- [x] pyproject.toml — declare bundled strategies as package-data; bump to 0.3.0
+- [x] tests/test_installer.py — 8 tests: install, idempotent, conflict, force, new-file
+- [x] Update CONTEXT.md + PLAN.md
+- [x] Commit + push

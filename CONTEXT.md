@@ -252,6 +252,30 @@ session's design discussion.
 **PLAN.md updated:** Phase 2 complete (finding: negative); Phase 3 now includes
 the fade-strategy design decision.
 
+## Session: package rename + strategy install + versioning (2026-08-16, Phase 3)
+
+**Package directory renamed:** `moneymaker/` → `engine/`. The CLI command
+(`moneymaker`) and project name stay unchanged. All Python imports updated from
+`from moneymaker.X` → `from engine.X`. pyproject.toml updated accordingly.
+Version bumped to 0.3.0.
+
+**Strategy install/upgrade mechanism:**
+- `engine/installer.py`: hash-tracked copy of bundled strategies to home dir.
+  Manifest stored at `~/.moneymaker/.strategy_manifest.json`. Tracks SHA-256 of
+  installed files; on upgrade, skips user-modified files and reports conflicts.
+  `--force` flag overwrites all regardless.
+- Three new CLI commands: `install-strategies`, `upgrade-strategies [--force]`,
+  `upgrade` (git pull + pip install + strategy sync).
+- 8 tests in `tests/test_installer.py` cover: first install, idempotent run,
+  conflict detection, force overwrite, new-file-in-home reinstall.
+
+**Version tracking:** `engine/config.py` calls `check_version(home)` on every
+`get_home()` invocation. Writes current version to `~/.moneymaker/.version`;
+prints a notice to stderr if the package was upgraded since last run.
+
+**QUESTIONS.md Q2 resolved:** merge strategy is context-dependent — skip modified
+files, report conflicts, let user decide per conflict.
+
 ## Ownership handoff
 
 Starting from whenever you (the agent reading this) pick this up: you

@@ -1,8 +1,8 @@
-from moneymaker.providers.base import ExecutionProvider, OrderResult
-from moneymaker.providers.simulated import SimulatedExecutionProvider
-from moneymaker.providers.trading212 import Trading212DemoProvider
-from moneymaker.providers.ibkr import IBKRPaperProvider
-from moneymaker.providers.oanda import OANDAPracticeProvider
+from engine.providers.base import ExecutionProvider, OrderResult
+from engine.providers.simulated import SimulatedExecutionProvider
+from engine.providers.trading212 import Trading212DemoProvider
+from engine.providers.ibkr import IBKRPaperProvider
+from engine.providers.oanda import OANDAPracticeProvider
 
 PROVIDERS: dict[str, type[ExecutionProvider]] = {
     SimulatedExecutionProvider.name: SimulatedExecutionProvider,

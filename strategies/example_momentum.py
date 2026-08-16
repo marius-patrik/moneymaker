@@ -4,7 +4,7 @@ your <MONEYMAKER_HOME>/strategies/ directory and it will be auto-loaded
 alongside the built-ins — no need to edit the moneymaker package at all.
 """
 
-from moneymaker.strategy import Bar, Strategy, StrategyContext
+from engine.strategy import Bar, Strategy, StrategyContext
 
 
 class ExampleMomentum(Strategy):

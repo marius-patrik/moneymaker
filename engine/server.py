@@ -12,16 +12,16 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from moneymaker.accounts import AccountManager, CredentialStore
-from moneymaker.data import DataFeed
-from moneymaker.engine import Simulator
-from moneymaker.logger import TradeLogger
-from moneymaker.multiwindow import run_multi_window_backtest
-from moneymaker.optimizer import default_objective, grid_search
-from moneymaker.providers import PROVIDERS, make_provider
-from moneymaker.providers.simulated import SimulatedExecutionProvider
-from moneymaker.risk import RiskManager
-from moneymaker.strategy import BUILTIN_STRATEGIES, load_strategies
+from engine.accounts import AccountManager, CredentialStore
+from engine.data import DataFeed
+from engine.engine import Simulator
+from engine.logger import TradeLogger
+from engine.multiwindow import run_multi_window_backtest
+from engine.optimizer import default_objective, grid_search
+from engine.providers import PROVIDERS, make_provider
+from engine.providers.simulated import SimulatedExecutionProvider
+from engine.risk import RiskManager
+from engine.strategy import BUILTIN_STRATEGIES, load_strategies
 
 
 class ServerState:

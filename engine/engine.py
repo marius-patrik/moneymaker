@@ -12,11 +12,11 @@ from typing import Optional
 
 import pandas as pd
 
-from moneymaker.data import DataFeed
-from moneymaker.logger import Trade, TradeLogger
-from moneymaker.providers.base import ExecutionProvider
-from moneymaker.risk import RiskManager
-from moneymaker.strategy import Bar, Strategy, StrategyContext
+from engine.data import DataFeed
+from engine.logger import Trade, TradeLogger
+from engine.providers.base import ExecutionProvider
+from engine.risk import RiskManager
+from engine.strategy import Bar, Strategy, StrategyContext
 
 
 class Simulator:

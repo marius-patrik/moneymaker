@@ -15,4 +15,6 @@ def get_home(cli_override: Optional[str] = None) -> str:
     home = cli_override or os.environ.get("MONEYMAKER_HOME") or os.path.expanduser("~/.moneymaker")
     for sub in ("strategies", "sessions", "data_cache", "credentials"):
         os.makedirs(os.path.join(home, sub), exist_ok=True)
+    from engine.installer import check_version
+    check_version(home)
     return home

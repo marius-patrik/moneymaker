@@ -11,17 +11,17 @@ import json
 import os
 import sys
 
-from moneymaker.accounts import AccountManager, CredentialStore
-from moneymaker.config import get_home
-from moneymaker.data import DataFeed
-from moneymaker.engine import Simulator
-from moneymaker.logger import TradeLogger
-from moneymaker.multiwindow import run_multi_window_backtest
-from moneymaker.optimizer import default_objective, grid_search
-from moneymaker.providers import PROVIDERS, make_provider
-from moneymaker.providers.simulated import SimulatedExecutionProvider
-from moneymaker.risk import RiskManager
-from moneymaker.strategy import BUILTIN_STRATEGIES, load_strategies
+from engine.accounts import AccountManager, CredentialStore
+from engine.config import get_home
+from engine.data import DataFeed
+from engine.engine import Simulator
+from engine.logger import TradeLogger
+from engine.multiwindow import run_multi_window_backtest
+from engine.optimizer import default_objective, grid_search
+from engine.providers import PROVIDERS, make_provider
+from engine.providers.simulated import SimulatedExecutionProvider
+from engine.risk import RiskManager
+from engine.strategy import BUILTIN_STRATEGIES, load_strategies
 
 
 # --------------------------------------------------------------------------
@@ -315,11 +315,35 @@ def cmd_optimize(args):
 
 
 # --------------------------------------------------------------------------
+# strategy install / upgrade
+# --------------------------------------------------------------------------
+
+def cmd_install_strategies(args):
+    from engine.installer import install_strategies, print_install_result
+    home = get_home(args.data_dir)
+    result = install_strategies(home, force=getattr(args, "force", False))
+    print_install_result(result)
+
+
+def cmd_upgrade_strategies(args):
+    from engine.installer import install_strategies, print_install_result
+    home = get_home(args.data_dir)
+    result = install_strategies(home, force=args.force)
+    print_install_result(result)
+
+
+def cmd_upgrade(args):
+    from engine.installer import run_upgrade
+    home = get_home(args.data_dir)
+    run_upgrade(home)
+
+
+# --------------------------------------------------------------------------
 # server
 # --------------------------------------------------------------------------
 
 def cmd_server(args):
-    from moneymaker.server import run_server
+    from engine.server import run_server
     run_server(get_home(args.data_dir), args.host, args.port)
 
 
@@ -436,6 +460,22 @@ def main():
     p_opt.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
     p_opt.add_argument("--top", type=int, default=5, help="How many top candidates to print")
     p_opt.set_defaults(func=cmd_optimize)
+
+    p_inst = sub.add_parser("install-strategies",
+                             help="Copy bundled strategies to the home strategies/ dir (first-time setup).")
+    p_inst.set_defaults(func=cmd_install_strategies)
+
+    p_up_strat = sub.add_parser("upgrade-strategies",
+                                 help="Sync updated bundled strategies to home dir. "
+                                      "Skips locally modified files unless --force.")
+    p_up_strat.add_argument("--force", action="store_true",
+                             help="Overwrite locally modified strategies without prompting.")
+    p_up_strat.set_defaults(func=cmd_upgrade_strategies)
+
+    p_upgrade = sub.add_parser("upgrade",
+                                help="Pull the latest version from the repo, reinstall, "
+                                     "and sync bundled strategies.")
+    p_upgrade.set_defaults(func=cmd_upgrade)
 
     p_server = sub.add_parser("server", help="Run the HTTP+JSON API server.")
     p_server.add_argument("--host", default="127.0.0.1")

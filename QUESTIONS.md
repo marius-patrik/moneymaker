@@ -13,12 +13,10 @@ Is `marius-patrik/moneymaker` private? Per HANDOFF.md guardrails it should be
 private; never explicitly confirmed. Run `gh repo view marius-patrik/moneymaker
 --json visibility` to verify.
 
-**Q2 — Strategy install: user-editable or system-managed?**
-When bundled strategies are installed to `~/.moneymaker/strategies/`, are they
-intended to be edited freely by the user (editable copies), or should they be
-treated as system-managed (hands-off, overwritten on upgrade)? The merge
-mechanism in PROPOSALS.md P-INSTALL assumes editable-copy semantics, but
-confirming this shapes the design.
+**Q2 — Strategy install: user-editable or system-managed?** _(Resolved 2026-08-16)_
+Editable copies. Merge strategy is context-dependent: skip user-modified files,
+report conflicts, let user decide per conflict. `--force` flag available for
+full overwrite. Implemented in `engine/installer.py`.
 
 **Q3 — release_dates calendar for data-release strategies**
 If we add a `release_dates` parameter to `retail_sales_spike_filtered`, where

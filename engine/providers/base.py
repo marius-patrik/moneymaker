@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
-from moneymaker.accounts import AccountInfo, CredentialStore
+from engine.accounts import AccountInfo, CredentialStore
 
 
 @dataclass

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from moneymaker.strategy import Bar, Strategy, StrategyContext, reset_session_if_new_day
+from engine.strategy import Bar, Strategy, StrategyContext, reset_session_if_new_day
 
 
 class FilteredDataReleaseStrategy(Strategy):

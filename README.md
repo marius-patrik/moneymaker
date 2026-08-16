@@ -57,7 +57,7 @@ PROPOSALS.md        engine improvement proposals (discuss before implementing)
 QUESTIONS.md        open questions parked for later — no instant answer needed
 PRD.md              product requirements (scope, non-requirements)
 
-moneymaker/
+engine/                             Python package (import as `engine.*`)
   config.py          filesystem-first data dir resolution (~/.moneymaker by default)
   accounts.py        AccountManager (multi-account) + CredentialStore
   data.py            historical/live price data via yfinance, disk-cached
@@ -65,10 +65,11 @@ moneymaker/
   risk.py            position sizing from % account risk
   logger.py          Trade record + CSV session logging
   engine.py          Simulator — the loop shared by backtest & live modes
+  installer.py       strategy install/upgrade with hash-tracked merge
   multiwindow.py     multi-window backtest aggregation
   optimizer.py       grid-search optimizer with train/test split
   server.py          HTTP+JSON API (stdlib only, no extra deps)
-  cli.py             argparse CLI entry point
+  cli.py             argparse CLI entry point (command: `moneymaker`)
   providers/
     base.py          ExecutionProvider interface
     simulated.py     the only implemented provider
@@ -169,7 +170,7 @@ Drop a `.py` file into `<home>/strategies/` (see `strategies/example_momentum.py
 for the pattern):
 
 ```python
-from moneymaker.strategy import Strategy, StrategyContext, Bar
+from engine.strategy import Strategy, StrategyContext, Bar
 
 class MyStrategy(Strategy):
     """One-line description shown in `strategies` list."""

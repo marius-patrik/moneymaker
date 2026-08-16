@@ -24,7 +24,7 @@ Proposed as P008a in PROPOSALS.md. Design discussion → implementation next ses
 
 ## Roadmap
 
-### Phase 3: Strategy install + versioning system [design pending]
+### Phase 3: Strategy install + versioning system [complete — 2026-08-16]
 Bundled strategies installed to `~/.moneymaker/strategies/` on first install,
 not loaded live from the repo dir. Merge mechanism on upgrade: skip user-modified
 files, update unchanged ones. Version tracking in home dir; `moneymaker upgrade`

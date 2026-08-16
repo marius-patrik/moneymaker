@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moneymaker"
-version = "0.2.0"
+version = "0.3.0"
 description = "Provider-agnostic paper/live trading engine with pluggable strategies."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,7 +18,10 @@ dependencies = [
 dev = ["pytest>=7.0"]
 
 [project.scripts]
-moneymaker = "moneymaker.cli:main"
+moneymaker = "engine.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["moneymaker*"]
+include = ["engine*"]
+
+[tool.setuptools.package-data]
+engine = ["bundled/*.py"]
