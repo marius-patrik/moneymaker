@@ -61,31 +61,31 @@ export function StrategyFlow({ strategyName, params }: StrategyFlowProps) {
       id: "data",
       type: "pipeline",
       position: { x: 0, y: 0 },
-      data: { label: "DataProvider", sub: "yfinance / csv / alpaca", color: "bg-blue-50 border-blue-300 dark:bg-blue-950 dark:border-blue-800" },
+      data: { label: "DataProvider", sub: "yfinance / csv / alpaca", color: "bg-blue-50 border-blue-300 dark:bg-neutral-900 dark:border-blue-700" },
     },
     {
       id: "strategy",
       type: "pipeline",
       position: { x: 0, y: 0 },
-      data: { label: strategyName, sub: paramSummary || "default params", color: "bg-violet-50 border-violet-300 dark:bg-violet-950 dark:border-violet-700" },
+      data: { label: strategyName, sub: paramSummary || "default params", color: "bg-violet-50 border-violet-300 dark:bg-neutral-900 dark:border-violet-600" },
     },
     {
       id: "risk",
       type: "pipeline",
       position: { x: 0, y: 0 },
-      data: { label: "RiskManager", sub: "position sizing", color: "bg-amber-50 border-amber-300 dark:bg-amber-950 dark:border-amber-700" },
+      data: { label: "RiskManager", sub: "position sizing", color: "bg-amber-50 border-amber-300 dark:bg-neutral-900 dark:border-amber-600" },
     },
     {
       id: "provider",
       type: "pipeline",
       position: { x: 0, y: 0 },
-      data: { label: "ExecProvider", sub: "simulated / broker", color: "bg-emerald-50 border-emerald-300 dark:bg-emerald-950 dark:border-emerald-700" },
+      data: { label: "ExecProvider", sub: "simulated / broker", color: "bg-emerald-50 border-emerald-300 dark:bg-neutral-900 dark:border-emerald-600" },
     },
     {
       id: "logger",
       type: "pipeline",
       position: { x: 0, y: 0 },
-      data: { label: "TradeLogger", sub: "sessions/", color: "bg-rose-50 border-rose-300 dark:bg-rose-950 dark:border-rose-800" },
+      data: { label: "TradeLogger", sub: "sessions/", color: "bg-rose-50 border-rose-300 dark:bg-neutral-900 dark:border-rose-700" },
     },
   ];
 
