@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import os
+import pathlib
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -199,17 +200,15 @@ BUILTIN_STRATEGIES: dict[str, type[Strategy]] = {
 }
 
 
-def load_strategies(home: str) -> dict[str, type[Strategy]]:
-    """Built-ins plus anything dropped in <home>/strategies/*.py."""
-    strategies = dict(BUILTIN_STRATEGIES)
-    strat_dir = os.path.join(home, "strategies")
+def _load_strategy_dir(strategies: dict, strat_dir: str, label: str) -> None:
+    """Scan one directory for Strategy subclasses and merge into strategies dict."""
     if not os.path.isdir(strat_dir):
-        return strategies
-    for fname in os.listdir(strat_dir):
+        return
+    for fname in sorted(os.listdir(strat_dir)):
         if not fname.endswith(".py") or fname.startswith("_"):
             continue
         path = os.path.join(strat_dir, fname)
-        modname = f"moneymaker_user_strategy_{fname[:-3]}"
+        modname = f"moneymaker_{label}_{fname[:-3]}"
         try:
             spec = importlib.util.spec_from_file_location(modname, path)
             mod = importlib.util.module_from_spec(spec)
@@ -220,4 +219,21 @@ def load_strategies(home: str) -> dict[str, type[Strategy]]:
                     strategies[attr.name] = attr
         except Exception as e:
             print(f"warning: failed to load strategy file {fname}: {e}", file=sys.stderr)
+
+
+def load_strategies(home: str) -> dict[str, type[Strategy]]:
+    """
+    Built-ins + repo-bundled strategies/ dir + <home>/strategies/ drop-ins.
+
+    Load order (later entries win on name collision):
+      1. BUILTIN_STRATEGIES (hardcoded in this file)
+      2. strategies/ dir next to this package (repo-bundled, always up-to-date)
+      3. <home>/strategies/ drop-ins (user-added or overrides)
+    """
+    strategies = dict(BUILTIN_STRATEGIES)
+    # Repo-bundled: strategies/ sits one level above this package dir
+    repo_strategies = pathlib.Path(__file__).parent.parent / "strategies"
+    _load_strategy_dir(strategies, str(repo_strategies), "bundled")
+    # User drop-ins: ~/.moneymaker/strategies/ (or override via --data-dir)
+    _load_strategy_dir(strategies, os.path.join(home, "strategies"), "user")
     return strategies

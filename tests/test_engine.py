@@ -302,10 +302,11 @@ def test_filtered_strategy_trades_on_real_spike(home):
     base_time = dt.datetime(2026, 8, 14, 8, 20)
     prices = [
         5000, 5000, 5001, 5000, 5000,
-        5000, 5001, 5000, 5000.5, 5000,   # tight baseline window
-        5020, 5030, 5025, 5028, 5027,      # clear spike after release
-        5027, 5026,                          # basing -> entry
-        5070,                                  # -> target
+        5000, 5001, 5000, 5000.5, 5000,   # tight baseline window (8:25–8:29)
+        5020, 5030, 5025, 5028, 5027,      # clear spike (8:30–8:34)
+        5027, 5026, 5027,                  # 3-bar basing (8:35–8:37)
+        5028,                              # breakout (1 pt above basing_high=5027)
+        5040,                              # target (~5037 at 2:1 R:R)
     ]
     for i, p in enumerate(prices):
         sim.feed_bar(Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)))
@@ -364,8 +365,12 @@ def test_filtered_strategy_resets_signal_cache_across_days(home):
 
     def real_spike_day(date, base):
         base_time = dt.datetime.combine(date, dt.time(8, 20))
+        # baseline(8:20-8:29), spike(8:30-8:34), 3-bar basing(8:35-8:37),
+        # breakout just above basing_high(8:38), target bar(8:39)
         prices = [base, base, base + 1, base, base, base, base + 1, base, base + 0.5, base,
-                  base + 20, base + 30, base + 25, base + 28, base + 27, base + 27, base + 26, base + 90]
+                  base + 20, base + 30, base + 25, base + 28, base + 27,
+                  base + 27, base + 26, base + 26.5,
+                  base + 27.5, base + 90]
         return [Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)) for i, p in enumerate(prices)]
 
     def flat_day(date, base):
