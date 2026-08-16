@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { Menu, TrendingUp } from "lucide-react";
+import { PanelLeftOpen, TrendingUp } from "lucide-react";
+import { AnimatedIcon, MotionHost } from "@/components/ui/animated-icon";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
 import { Sidebar, MobileNav, NAV } from "@/components/layout/Sidebar";
@@ -9,8 +10,7 @@ import { SettingsDialog } from "@/components/SettingsDialog";
 import { Dashboard } from "@/pages/Dashboard";
 import { Strategies } from "@/pages/Strategies";
 import { Research } from "@/pages/Research";
-import { Live } from "@/pages/Live";
-import { Sessions } from "@/pages/Sessions";
+import { Trade } from "@/pages/Trade";
 import { Accounts } from "@/pages/Accounts";
 
 const COLLAPSE_KEY = "mm.sidebar.collapsed";
@@ -61,8 +61,7 @@ export function App() {
     ["/", <Dashboard />],
     ["/strategies", <Strategies />],
     ["/research", <Research />],
-    ["/live", <Live />],
-    ["/sessions", <Sessions />],
+    ["/trade", <Trade />],
     ["/accounts", <Accounts />],
   ];
 
@@ -84,13 +83,15 @@ export function App() {
           <div className="flex min-w-0 flex-1 flex-col">
             {/* Mobile top bar — the only way to reach nav below md. */}
             <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-card px-4 md:hidden">
-              <button
-                onClick={() => setMobileOpen(true)}
-                aria-label="Open menu"
-                className="-ml-1 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
+              <MotionHost>
+                <button
+                  onClick={() => setMobileOpen(true)}
+                  aria-label="Open menu"
+                  className="-ml-1 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <AnimatedIcon icon={PanelLeftOpen} motionType="nudge" className="h-5 w-5" />
+                </button>
+              </MotionHost>
               <div className="flex min-w-0 items-center gap-2">
                 <TrendingUp className="h-4 w-4 shrink-0 text-primary" />
                 <span className="truncate text-sm font-bold tracking-tight">{title}</span>

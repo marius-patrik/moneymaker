@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Zap, ChevronDown, Play, Loader2, Layers, SlidersHorizontal, RotateCcw } from "lucide-react";
+import { Zap, ChevronDown, Play, Loader2, Layers, SlidersHorizontal, RotateCcw,
+         Radio, Plus, Trash2, Code } from "lucide-react";
+import { AnimatedIcon, MotionHost } from "@/components/ui/animated-icon";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +49,7 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [multi, setMulti] = useState<MultiWindowResult | null>(null);
+  const [golive, setGolive] = useState(false);
 
   // Seed the param editor from the strategy's declared defaults.
   useEffect(() => {
@@ -95,6 +99,21 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
       toast(e instanceof Error ? e.message : "Multi-window backtest failed", "error");
     }
     setLoading(false);
+  }
+
+  async function goLive() {
+    if (!window.confirm(
+      `Run ${s.name} live on ${form.ticker}?\n\n` +
+      `It trades a paper account until the session ends — you can stop it from the Trade tab.`
+    )) return;
+    setGolive(true);
+    try {
+      const r = await api.live.start({ strategy: s.name, ticker: form.ticker });
+      toast(`${s.name} live on ${form.ticker} · ${r.session_id}`, "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not go live", "error");
+    }
+    setGolive(false);
   }
 
   return (
@@ -233,12 +252,25 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
                   </div>
                 )}
 
-                <Button size="sm" className="w-full" disabled={loading}
-                        onClick={mode === "single" ? runSingle : runMulti}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" />
-                           : mode === "single" ? <Play className="h-4 w-4" /> : <Layers className="h-4 w-4" />}
-                  {loading ? "Running…" : mode === "single" ? "Run backtest" : "Run multi-window"}
-                </Button>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <MotionHost>
+                    <Button size="sm" className="w-full" disabled={loading}
+                            onClick={mode === "single" ? runSingle : runMulti}>
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" />
+                               : <AnimatedIcon icon={mode === "single" ? Play : Layers}
+                                               motionType="nudge" className="h-4 w-4" />}
+                      {loading ? "Running…" : mode === "single" ? "Run backtest" : "Run multi-window"}
+                    </Button>
+                  </MotionHost>
+                  <MotionHost>
+                    <Button size="sm" variant="outline" className="w-full border-profit/40 text-profit hover:bg-profit/10"
+                            disabled={golive} onClick={goLive}>
+                      {golive ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : <AnimatedIcon icon={Radio} motionType="pulse" className="h-4 w-4" />}
+                      {golive ? "Starting…" : "Go live"}
+                    </Button>
+                  </MotionHost>
+                </div>
 
                 {/* single-window result */}
                 {result && (
@@ -288,17 +320,86 @@ function StrategyCard({ s, config }: { s: Strategy; config: AppConfig | null }) 
   );
 }
 
+function NewStrategyDialog({ onCreated }: { onCreated: () => void }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [source, setSource] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function create() {
+    setSaving(true);
+    try {
+      await api.strategies.create({ name, source: source.trim() || undefined });
+      toast(`Created ${name}`, "success");
+      setOpen(false); setName(""); setSource("");
+      onCreated();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not create strategy", "error");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <MotionHost>
+          <Button size="sm">
+            <AnimatedIcon icon={Plus} motionType="pop" className="h-4 w-4" />
+            New strategy
+          </Button>
+        </MotionHost>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>New strategy</DialogTitle>
+          <DialogDescription>
+            Saved to your data directory and loaded immediately. Leave the code
+            empty to start from a working template.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Field label="Name" value={name} mono placeholder="my_strategy"
+                 onValueChange={setName} className="h-10"
+                 hint="Lowercase with underscores — this becomes the file name and the strategy id." />
+          <div className="space-y-1">
+            <Label htmlFor="new-src" className="text-xs">Code (optional)</Label>
+            <textarea
+              id="new-src"
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              placeholder="Leave empty to use the template…"
+              spellCheck={false}
+              rows={12}
+              className="w-full rounded-lg border bg-background p-3 font-mono text-xs
+                         ring-offset-background focus-visible:outline-none
+                         focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
+          <Button className="w-full" onClick={create} disabled={saving || !name}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Code className="h-4 w-4" />}
+            Create strategy
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function Strategies() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
+  const reload = () =>
     api.strategies.list()
       .then((r) => setStrategies(r.strategies))
       .catch(() => {})
       .finally(() => setLoading(false));
+
+  useEffect(() => {
+    reload();
     api.config.get().then(setConfig).catch(() => {});
   }, []);
 
@@ -316,9 +417,12 @@ export function Strategies() {
             {strategies.length} available · expand one to tune parameters and backtest.
           </p>
         </div>
-        <Input value={query} onChange={(e) => setQuery(e.target.value)}
-               aria-label="Filter strategies"
-               placeholder="Filter…" className="h-8 w-full text-sm sm:max-w-56" />
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <Input value={query} onChange={(e) => setQuery(e.target.value)}
+                 aria-label="Filter strategies"
+                 placeholder="Filter…" className="h-8 w-full text-sm sm:max-w-56" />
+          <NewStrategyDialog onCreated={reload} />
+        </div>
       </div>
 
       {loading ? (

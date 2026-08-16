@@ -119,6 +119,67 @@ class EvolveBody(BaseModel):
     start_params: Optional[dict[str, Any]] = None
 
 
+class ManualOrderBody(BaseModel):
+    ticker: str
+    direction: str                     # "long" | "short"
+    size: float
+    account_id: Optional[str] = None
+    provider: str = "simulated"
+    closing: bool = False
+    reference_price: Optional[float] = None   # omitted → fetch the last price
+    data_provider: str = "yfinance"
+
+
+class CreateStrategyBody(BaseModel):
+    name: str
+    source: str = ""          # empty → start from the template below
+    overwrite: bool = False
+
+
+# Starting point for a strategy created from the UI. Mirrors
+# strategies/example_momentum.py, trimmed to the parts worth editing.
+_STRATEGY_TEMPLATE = '''"""Created from the moneymaker UI."""
+
+from src.strategy import Bar, Strategy, StrategyContext
+
+
+class __CLASS__(Strategy):
+    """One-line description — this shows up in the strategy list."""
+
+    name = "__NAME__"
+
+    def __init__(self, stop_pct: float = 0.005, target_pct: float = 0.010):
+        # Every __init__ argument with a default becomes a tunable parameter
+        # in the UI and on the CLI via --param.
+        self.stop_pct = stop_pct
+        self.target_pct = target_pct
+
+    def on_bar(self, ctx: StrategyContext, bar: Bar) -> None:
+        # Manage an open position first.
+        if ctx.position_open:
+            change = (bar.price - ctx.entry_price) / ctx.entry_price
+            if change >= self.target_pct:
+                ctx.extra["close_reason"] = "target"
+                ctx.extra["close_now"] = True
+            elif change <= -self.stop_pct:
+                ctx.extra["close_reason"] = "stop"
+                ctx.extra["close_now"] = True
+            return
+
+        # Entry logic goes here. This example takes one long trade on the
+        # first bar so the strategy does something runnable out of the box.
+        if ctx.trades_taken >= 1:
+            return
+
+        ctx.position_open = True
+        ctx.direction = "long"
+        ctx.entry_price = bar.price
+        ctx.entry_time = bar.time
+        ctx.stop_price = bar.price * (1 - self.stop_pct)
+        ctx.target_price = bar.price * (1 + self.target_pct)
+'''
+
+
 class OptimizeBody(BaseModel):
     strategy: str
     ticker: str
@@ -209,15 +270,108 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             for n, c in strategies.items()
         ]}
 
+    @api.get("/strategies/{name}/source")
+    def get_strategy_source(name: str):
+        """Source of a user strategy, for editing in the UI."""
+        path = pathlib.Path(state.home) / "strategies" / f"{name}.py"
+        if not path.is_file():
+            raise HTTPException(404, f"no editable source for '{name}'")
+        return {"name": name, "source": path.read_text(), "path": str(path)}
+
+    @api.post("/strategies")
+    def create_strategy(body: CreateStrategyBody):
+        """
+        Write a strategy into <home>/strategies/, where it is auto-loaded.
+
+        Saving invalid Python would make the strategy list warn on every
+        request, so the source is compiled first and rejected if it does not
+        parse or defines no Strategy subclass.
+        """
+        safe = body.name.strip()
+        if not safe.isidentifier():
+            raise HTTPException(
+                400, "name must be a valid Python identifier (letters, digits, underscore)")
+
+        source = body.source.strip() or _STRATEGY_TEMPLATE.replace("__NAME__", safe).replace(
+            "__CLASS__", "".join(p.title() for p in safe.split("_")))
+
+        try:
+            compile(source, f"{safe}.py", "exec")
+        except SyntaxError as e:
+            raise HTTPException(400, f"syntax error on line {e.lineno}: {e.msg}")
+        if "Strategy" not in source:
+            raise HTTPException(400, "source defines no Strategy subclass")
+
+        path = pathlib.Path(state.home) / "strategies" / f"{safe}.py"
+        if path.exists() and not body.overwrite:
+            raise HTTPException(409, f"'{safe}' already exists — set overwrite to replace it")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+
+        # Confirm it actually loads, so a strategy that imports something
+        # missing is reported now rather than silently absent from the list.
+        if safe not in load_strategies(state.home):
+            path.unlink(missing_ok=True)
+            raise HTTPException(
+                400, f"saved source did not register a strategy named '{safe}' — "
+                     "check the class's `name` attribute")
+        return {"name": safe, "path": str(path)}
+
+    @api.delete("/strategies/{name}")
+    def delete_strategy(name: str):
+        path = pathlib.Path(state.home) / "strategies" / f"{name}.py"
+        if not path.is_file():
+            raise HTTPException(404, f"no user strategy named '{name}'")
+        path.unlink()
+        return {"deleted": name}
+
     # ---- providers ----
 
     @api.get("/providers")
-    def list_providers():
-        return {"providers": [
-            {"name": n, "doc": (c.__doc__ or "").strip().split("\n")[0],
-             "status": "ready" if c is SimulatedExecutionProvider else "stub"}
+    def list_providers(include_stubs: bool = False):
+        """
+        Providers grouped by what they supply: market data, economic
+        calendar/news, and order execution.
+
+        Scaffolded-but-unimplemented execution providers are omitted unless
+        include_stubs is set — they cannot do anything yet, so listing them
+        by default just implies capability that is not there.
+        """
+        def _doc(cls) -> str:
+            return (cls.__doc__ or "").strip().split("\n")[0]
+
+        execution = [
+            {"name": n, "doc": _doc(c),
+             "status": "ready" if c is SimulatedExecutionProvider else "stub",
+             "is_live": bool(getattr(c, "is_live", False))}
             for n, c in PROVIDERS.items()
-        ]}
+        ]
+        if not include_stubs:
+            execution = [p for p in execution if p["status"] == "ready"]
+
+        from src.data_providers import DATA_PROVIDERS
+        data = [
+            {"name": n, "doc": _doc(c), "status": "ready",
+             "is_live": bool(getattr(c, "is_live", False))}
+            for n, c in DATA_PROVIDERS.items()
+        ]
+
+        # Calendar sources are constructed per series rather than registered
+        # in a dict, so they are described here.
+        news = [
+            {"name": "fred", "status": "ready",
+             "doc": "US economic release dates via FRED vintage dates (API key required)."},
+            {"name": "simulated", "status": "ready",
+             "doc": "In-memory fixture calendar; no network."},
+            {"name": "bls", "status": "stub",
+             "doc": "BLS offers no clean vintage-date API — use a FRED equivalent."},
+        ]
+        if not include_stubs:
+            news = [p for p in news if p["status"] == "ready"]
+
+        return {"data": data, "news": news, "execution": execution,
+                # Kept so existing clients that read `providers` still work.
+                "providers": execution}
 
     # ---- accounts ----
 
@@ -284,10 +438,48 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
     # ---- sessions ----
 
     @api.get("/sessions")
-    def list_sessions():
-        sess_dir = os.path.join(state.home, "sessions")
-        files = sorted(os.listdir(sess_dir)) if os.path.isdir(sess_dir) else []
-        return {"sessions": files}
+    def list_sessions(limit: int = 200):
+        """
+        Sessions newest-first, each with a summary read from its trades.
+
+        A bare filename tells you almost nothing, so every CSV is scanned for
+        trade count, P&L and win rate. Files are small (one row per trade)
+        and the newest `limit` are read, so this stays cheap.
+        """
+        sess_dir = pathlib.Path(state.home) / "sessions"
+        if not sess_dir.is_dir():
+            return {"sessions": []}
+
+        files = sorted(sess_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+        out = []
+        for path in files[:limit]:
+            entry = {
+                "name": path.name,
+                "kind": "trades" if path.suffix == ".csv" else "result",
+                "modified": dt.datetime.fromtimestamp(path.stat().st_mtime).isoformat(
+                    timespec="seconds"),
+                "size": path.stat().st_size,
+            }
+            if path.suffix == ".csv":
+                try:
+                    with open(path) as f:
+                        rows = list(csv.DictReader(f))
+                    pnls = [float(r["pnl"]) for r in rows
+                            if r.get("pnl") not in (None, "")]
+                    wins = [p for p in pnls if p > 0]
+                    entry.update({
+                        "trades": len(pnls),
+                        "total_pnl": round(sum(pnls), 2),
+                        "win_rate": round(len(wins) / len(pnls), 4) if pnls else None,
+                        "ticker": rows[0].get("ticker") if rows else None,
+                        "first_trade": rows[0].get("entry_time") if rows else None,
+                        "last_trade": rows[-1].get("exit_time") if rows else None,
+                    })
+                except (OSError, ValueError, KeyError):
+                    # A malformed or half-written log should not break the list.
+                    entry["trades"] = None
+            out.append(entry)
+        return {"sessions": out}
 
     @api.get("/sessions/{filename}")
     def get_session(filename: str):
@@ -444,6 +636,56 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             "evolve", f"{body.strategy} · {body.ticker} · {body.generations}gen", _work)
         return job.to_dict()
 
+    # ---- manual trading ----
+
+    @api.get("/quote/{ticker:path}")
+    def get_quote(ticker: str, data_provider: str = "yfinance"):
+        """Last price for a ticker, for the manual ticket."""
+        from src.data_providers import make_data_provider
+        prov = make_data_provider(data_provider, state.home)
+        if not getattr(prov, "is_live", False):
+            raise HTTPException(400, f"'{data_provider}' does not provide live prices")
+        price, ts = prov.get_last_price(ticker)
+        return {"ticker": ticker, "price": price,
+                "time": ts.isoformat() if hasattr(ts, "isoformat") else str(ts)}
+
+    @api.post("/orders")
+    def place_order(body: ManualOrderBody):
+        """
+        Place a single order by hand, outside any strategy.
+
+        make_provider refuses to build a live provider, so this can only ever
+        reach a paper account — placing a real-money order stays a deliberate,
+        explicit act elsewhere.
+        """
+        if body.direction not in ("long", "short"):
+            raise HTTPException(400, "direction must be 'long' or 'short'")
+        if body.size <= 0:
+            raise HTTPException(400, "size must be positive")
+
+        provider = make_provider(body.provider, state.home)
+        account_id = _resolve_account(provider, body.account_id, 10000.0)
+
+        price = body.reference_price
+        if price is None:
+            from src.data_providers import make_data_provider
+            prov = make_data_provider(body.data_provider, state.home)
+            price, _ = prov.get_last_price(body.ticker)
+
+        result = provider.execute_order(
+            account_id=account_id, ticker=body.ticker, direction=body.direction,
+            size=body.size, reference_price=price, timestamp=dt.datetime.now(),
+            closing=body.closing,
+        )
+        return {
+            "account_id": account_id,
+            "ticker": body.ticker,
+            "direction": body.direction,
+            "size": body.size,
+            "fill_price": getattr(result, "fill_price", price),
+            "balance": provider.get_account_balance(account_id),
+        }
+
     # ---- jobs ----
 
     @api.get("/jobs")
@@ -478,8 +720,68 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         return {
             "version": __version__,
             "home": state.home,
+            "home_source": ("MONEYMAKER_HOME" if os.environ.get("MONEYMAKER_HOME")
+                            else "default"),
             "data_providers": sorted(DATA_PROVIDERS),
             "execution_providers": sorted(PROVIDERS),
+        }
+
+    @api.get("/stats")
+    def get_stats():
+        """
+        Aggregate numbers for the dashboard, computed across every recorded
+        session rather than just the live ones.
+        """
+        sess_dir = pathlib.Path(state.home) / "sessions"
+        pnls: list[float] = []
+        sessions = 0
+        best = worst = None
+        tickers: set[str] = set()
+
+        if sess_dir.is_dir():
+            for path in sess_dir.glob("*.csv"):
+                sessions += 1
+                try:
+                    with open(path) as f:
+                        rows = list(csv.DictReader(f))
+                except OSError:
+                    continue
+                for r in rows:
+                    if r.get("ticker"):
+                        tickers.add(r["ticker"])
+                    raw = r.get("pnl")
+                    if raw in (None, ""):
+                        continue
+                    try:
+                        pnls.append(float(raw))
+                    except ValueError:
+                        continue
+
+        wins = [p for p in pnls if p > 0]
+        losses = [p for p in pnls if p <= 0]
+        if pnls:
+            best, worst = max(pnls), min(pnls)
+
+        mgr = AccountManager(state.home)
+        accounts = mgr.list()
+
+        return {
+            "sessions": sessions,
+            "accounts": len(accounts),
+            "total_balance": round(sum(a.balance for a in accounts), 2),
+            "trades": len(pnls),
+            "total_pnl": round(sum(pnls), 2),
+            "win_rate": round(len(wins) / len(pnls), 4) if pnls else None,
+            "wins": len(wins),
+            "losses": len(losses),
+            "avg_win": round(sum(wins) / len(wins), 2) if wins else 0.0,
+            "avg_loss": round(sum(losses) / len(losses), 2) if losses else 0.0,
+            "best_trade": round(best, 2) if best is not None else None,
+            "worst_trade": round(worst, 2) if worst is not None else None,
+            "profit_factor": (round(sum(wins) / abs(sum(losses)), 2)
+                              if losses and sum(losses) else None),
+            "strategies": len(load_strategies(state.home)),
+            "live_sessions": len(state.sessions),
         }
 
     # ---- live ----

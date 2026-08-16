@@ -53,6 +53,44 @@ export interface Provider {
   name: string;
   doc: string;
   status: "ready" | "stub";
+  is_live?: boolean;
+}
+
+export interface ProviderGroups {
+  data: Provider[];
+  news: Provider[];
+  execution: Provider[];
+}
+
+export interface SessionEntry {
+  name: string;
+  kind: "trades" | "result";
+  modified: string;
+  size: number;
+  trades?: number | null;
+  total_pnl?: number;
+  win_rate?: number | null;
+  ticker?: string | null;
+  first_trade?: string | null;
+  last_trade?: string | null;
+}
+
+export interface Stats {
+  sessions: number;
+  accounts: number;
+  total_balance: number;
+  trades: number;
+  total_pnl: number;
+  win_rate: number | null;
+  wins: number;
+  losses: number;
+  avg_win: number;
+  avg_loss: number;
+  best_trade: number | null;
+  worst_trade: number | null;
+  profit_factor: number | null;
+  strategies: number;
+  live_sessions: number;
 }
 
 export interface Account {
@@ -60,7 +98,9 @@ export interface Account {
   name: string;
   provider: string;
   currency: string;
-  starting_balance: number;
+  /** Current balance. Creation takes `starting_balance`; the stored record
+   *  and every read-back call it `balance`. */
+  balance: number;
   is_live: boolean;
 }
 
@@ -83,8 +123,13 @@ export interface StatusPayload {
   open_pnl: number;
   position_open: boolean;
   direction: string | null;
+  entry_price: number | null;
+  entry_time: string | null;
+  stop_price: number | null;
+  target_price: number | null;
   last_price: number | null;
   bars_seen: number;
+  trades_taken: number;
   summary: Record<string, number>;
 }
 
@@ -112,6 +157,7 @@ export interface Job<T = unknown> {
 export interface AppConfig {
   version: string;
   home: string;
+  home_source?: string;
   data_providers: string[];
   execution_providers: string[];
 }
@@ -159,9 +205,19 @@ export interface OptimizeResult {
 export const api = {
   strategies: {
     list: () => get<{ strategies: Strategy[] }>("/strategies"),
+    source: (name: string) =>
+      get<{ name: string; source: string; path: string }>(`/strategies/${name}/source`),
+    create: (body: { name: string; source?: string; overwrite?: boolean }) =>
+      post<{ name: string; path: string }>("/strategies", body),
+    remove: (name: string) => del<{ deleted: string }>(`/strategies/${name}`),
   },
   providers: {
-    list: () => get<{ providers: Provider[] }>("/providers"),
+    list: (includeStubs = false) =>
+      get<ProviderGroups & { providers: Provider[] }>(
+        `/providers?include_stubs=${includeStubs}`),
+  },
+  stats: {
+    get: () => get<Stats>("/stats"),
   },
   config: {
     get: () => get<AppConfig>("/config"),
@@ -199,13 +255,23 @@ export const api = {
       interval?: string;
     }) => post<Job<OptimizeResult>>("/optimize", body),
   },
+  orders: {
+    place: (body: {
+      ticker: string; direction: "long" | "short"; size: number;
+      account_id?: string; closing?: boolean; reference_price?: number;
+    }) => post<{ account_id: string; ticker: string; direction: string;
+                 size: number; fill_price: number; balance: number }>("/orders", body),
+    quote: (ticker: string) =>
+      get<{ ticker: string; price: number; time: string }>(
+        `/quote/${encodeURIComponent(ticker)}`),
+  },
   jobs: {
     list: () => get<{ jobs: Job[] }>("/jobs"),
     get: <T>(id: string) => get<Job<T>>(`/jobs/${id}`),
     cancel: (id: string) => post<{ cancelling: string }>(`/jobs/${id}/cancel`, {}),
   },
   sessions: {
-    list: () => get<{ sessions: string[] }>("/sessions"),
+    list: () => get<{ sessions: SessionEntry[] }>("/sessions"),
     get: (filename: string) => get<{ trades: Trade[] } | Record<string, unknown>>(`/sessions/${filename}`),
   },
   backtest: {

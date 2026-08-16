@@ -72,7 +72,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 exit={{ opacity: 0, x: 12, scale: 0.96 }}
                 transition={{ duration: 0.18 }}
                 className={cn(
-                  "pointer-events-auto flex items-start gap-2.5 rounded-lg border bg-card p-3 shadow-lg",
+                  "glass-strong pointer-events-auto flex items-start gap-2.5 rounded-xl border p-3 shadow-2xl",
                   STYLES[t.kind]
                 )}
               >

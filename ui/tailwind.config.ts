@@ -35,6 +35,12 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Without this, bg-popover compiles to nothing and every dropdown,
+        // tooltip and select menu renders transparent over the page.
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
         profit: "hsl(142 76% 36%)",
         loss: "hsl(0 84% 60%)",
       },
