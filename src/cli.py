@@ -11,18 +11,18 @@ import json
 import os
 import sys
 
-from engine.accounts import AccountManager, CredentialStore
-from engine.config import get_home
-from engine.data import DataFeed
-from engine.data_providers import DATA_PROVIDERS, make_data_provider
-from engine.engine import Simulator
-from engine.logger import TradeLogger
-from engine.multiwindow import run_multi_window_backtest
-from engine.optimizer import default_objective, grid_search
-from engine.providers import PROVIDERS, make_provider
-from engine.providers.simulated import SimulatedExecutionProvider
-from engine.risk import RiskManager
-from engine.strategy import BUILTIN_STRATEGIES, load_strategies
+from src.accounts import AccountManager, CredentialStore
+from src.config import get_home
+from src.data import DataFeed
+from src.data_providers import DATA_PROVIDERS, make_data_provider
+from src.engine import Simulator
+from src.logger import TradeLogger
+from src.multiwindow import run_multi_window_backtest
+from src.optimizer import default_objective, grid_search
+from src.providers import PROVIDERS, make_provider
+from src.providers.simulated import SimulatedExecutionProvider
+from src.risk import RiskManager
+from src.strategy import BUILTIN_STRATEGIES, load_strategies
 
 
 def _parse_param_overrides(param_list: list[str], strategy_cls) -> dict:
@@ -429,7 +429,7 @@ def _resolve_forks(strategy_cls, strategies: dict) -> list:
 
 
 def cmd_fork_eval(args):
-    from engine.agents.forker import fork_and_eval, rolling_fork_eval
+    from src.agents.forker import fork_and_eval, rolling_fork_eval
     home = get_home(args.data_dir)
     strategies = load_strategies(home)
     strategy_cls = strategies.get(args.strategy)
@@ -505,7 +505,7 @@ def cmd_fork_eval(args):
 
 
 def cmd_rankings(args):
-    from engine.agents.forker import load_all_rolling
+    from src.agents.forker import load_all_rolling
     home = get_home(args.data_dir)
     all_results = load_all_rolling(home)
     if not all_results:
@@ -536,7 +536,7 @@ def cmd_rankings(args):
 
 
 def cmd_evolve(args):
-    from engine.agents.evolution import evolve
+    from src.agents.evolution import evolve
     home = get_home(args.data_dir)
     strategies = load_strategies(home)
     strategy_cls = strategies.get(args.strategy)
@@ -579,21 +579,21 @@ def cmd_evolve(args):
 # --------------------------------------------------------------------------
 
 def cmd_install_strategies(args):
-    from engine.installer import install_strategies, print_install_result
+    from src.installer import install_strategies, print_install_result
     home = get_home(args.data_dir)
     result = install_strategies(home, force=getattr(args, "force", False))
     print_install_result(result)
 
 
 def cmd_upgrade_strategies(args):
-    from engine.installer import install_strategies, print_install_result
+    from src.installer import install_strategies, print_install_result
     home = get_home(args.data_dir)
     result = install_strategies(home, force=args.force)
     print_install_result(result)
 
 
 def cmd_upgrade(args):
-    from engine.installer import run_upgrade
+    from src.installer import run_upgrade
     home = get_home(args.data_dir)
     run_upgrade(home)
 
@@ -603,7 +603,7 @@ def cmd_upgrade(args):
 # --------------------------------------------------------------------------
 
 def cmd_server(args):
-    from engine.server import run_server
+    from src.server import run_server
     run_server(get_home(args.data_dir), args.host, args.port)
 
 

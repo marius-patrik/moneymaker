@@ -64,8 +64,8 @@ moneymaker log --session <session-name-printed-above>
   DEFERRED.md         explicitly deferred items with triggers for revisiting
   TASKS.md            current session task list
 
-engine/                             Python package (import as `engine.*`)
-  config.py           filesystem-first data dir resolution (~/.moneymaker default)
+src/                                Python package (import as `src.*`)
+  config.py           filesystem-first data dir resolution (.data/ default)
   accounts.py         AccountManager (multi-account) + CredentialStore
   data.py             historical/live price data via yfinance, disk-cached (legacy)
   strategy.py         Strategy + MultiBarStrategy interfaces, built-in strategies
@@ -112,11 +112,13 @@ tests/
 
 ## Data directory
 
-Everything the engine persists lives under `~/.moneymaker` by default.
-Override with `--data-dir` or the `MONEYMAKER_HOME` env var.
+Everything the engine persists lives under `.data/` in the repository root by
+default — gitignored so no two clones share state by accident. Override with
+`--data-dir` or the `MONEYMAKER_HOME` env var (e.g. `export MONEYMAKER_HOME=~/.moneymaker`
+for a shared directory across multiple clones).
 
 ```
-~/.moneymaker/
+.data/                             default — gitignored (contents), .gitkeep only
   strategies/        drop-in .py files — any Strategy subclass auto-loads
   sessions/          trade log CSVs + JSON results, one per run
   data_cache/        cached historical bars (parquet)
@@ -241,7 +243,7 @@ Drop a `.py` file into `<home>/strategies/` (see `strategies/example_momentum.py
 for the pattern):
 
 ```python
-from engine.strategy import Strategy, StrategyContext, Bar
+from src.strategy import Strategy, StrategyContext, Bar
 
 class MyStrategy(Strategy):
     """One-line description shown in `strategies` list."""
@@ -259,7 +261,7 @@ For strategies that need correlated data from multiple instruments (e.g. ES
 enters only when NQ confirms):
 
 ```python
-from engine.strategy import MultiBarStrategy, StrategyContext, Bar
+from src.strategy import MultiBarStrategy, StrategyContext, Bar
 
 class ESWithNQConfirmation(MultiBarStrategy):
     name = "es_nq_confirm"

@@ -6,9 +6,12 @@ dist/
 .venv/
 venv/
 .pytest_cache/
+uv.lock
 
-# Local data dir if it ever ends up inside the repo checkout
-.moneymaker/
+# Default local data dir — contents are machine-specific, never commit them.
+# Set MONEYMAKER_HOME or --data-dir to use a different path.
+.data/*
+!.data/.gitkeep
 
 # Never commit real credentials
 credentials.json

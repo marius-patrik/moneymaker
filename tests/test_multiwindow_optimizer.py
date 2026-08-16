@@ -9,10 +9,10 @@ import datetime as dt
 import pandas as pd
 import pytest
 
-from engine.config import get_home
-from engine.multiwindow import run_multi_window_backtest
-from engine.optimizer import default_objective, grid_search
-from engine.strategy import RetailSalesSpikeStrategy
+from src.config import get_home
+from src.multiwindow import run_multi_window_backtest
+from src.optimizer import default_objective, grid_search
+from src.strategy import RetailSalesSpikeStrategy
 
 
 @pytest.fixture

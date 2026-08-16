@@ -52,9 +52,11 @@ implement `on_secondary_bar(ctx, bar, ticker)` to accumulate confirmation signal
 
 ## Engine / infrastructure
 
-### Strategy/home sync gap (DONE — installer.py)
-`load_strategies` scans repo's `strategies/` dir, then `~/.moneymaker/strategies/`
-as explicit overrides only. `install-strategies` / `upgrade-strategies` handle sync.
+### Data directory default (DONE 2026-08-16)
+Default data home is `.data/` under the repo root (gitignored, contents excluded via
+`.data/*` + `!.data/.gitkeep`). `MONEYMAKER_HOME` env var or `--data-dir` CLI flag
+override it. `~/.moneymaker` is no longer a fallback — users who want a shared dir
+across clones must set `MONEYMAKER_HOME` explicitly.
 
 ### Volume support in Bar (DONE 2026-08-16, P002)
 `Bar.volume: float = 0.0` added. Simulator passes `row["Volume"]` when present.

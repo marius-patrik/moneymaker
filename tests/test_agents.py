@@ -11,10 +11,10 @@ import pathlib
 import pandas as pd
 import pytest
 
-from engine.agents.forker import ForkResult, ForkSetResult, fork_and_eval
-from engine.agents.evolution import evolve
-from engine.config import get_home
-from engine.strategy import RetailSalesSpikeStrategy, Strategy, Bar, StrategyContext
+from src.agents.forker import ForkResult, ForkSetResult, fork_and_eval
+from src.agents.evolution import evolve
+from src.config import get_home
+from src.strategy import RetailSalesSpikeStrategy, Strategy, Bar, StrategyContext
 
 
 @pytest.fixture

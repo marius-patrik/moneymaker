@@ -15,8 +15,8 @@ a FRED series ID.
 
 Usage:
     # In a strategy:
-    from engine.econ_calendar import get_calendar
-    from engine.config import get_home
+    from src.econ_calendar import get_calendar
+    from src.config import get_home
     cal = get_calendar("us_retail_sales", get_home())
     dates = cal.get_release_dates(start_date, end_date)
     if today not in dates:
@@ -38,7 +38,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from engine.accounts import CredentialStore
+from src.accounts import CredentialStore
 
 # ---------------------------------------------------------------------------
 # Alias table: release name -> (provider, series_id)

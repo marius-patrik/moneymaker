@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from engine.strategy import Bar, Strategy, StrategyContext, reset_session_if_new_day
+from src.strategy import Bar, Strategy, StrategyContext, reset_session_if_new_day
 
 
 class FilteredDataReleaseStrategy(Strategy):
@@ -127,8 +127,8 @@ class FilteredDataReleaseStrategy(Strategy):
 
         # --- Calendar gate: skip sessions that are not release days ---
         if self.calendar_series and "is_release_day" not in ctx.extra:
-            from engine.econ_calendar import get_calendar
-            from engine.config import get_home
+            from src.econ_calendar import get_calendar
+            from src.config import get_home
             today = bar.time.date()
             try:
                 cal = get_calendar(self.calendar_series, get_home())

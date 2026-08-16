@@ -24,7 +24,7 @@ import itertools
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from engine.multiwindow import run_multi_window_backtest
+from src.multiwindow import run_multi_window_backtest
 
 
 @dataclass

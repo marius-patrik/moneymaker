@@ -15,10 +15,10 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from engine.engine import Simulator
-from engine.logger import TradeLogger
-from engine.providers import make_provider
-from engine.risk import RiskManager
+from src.engine import Simulator
+from src.logger import TradeLogger
+from src.providers import make_provider
+from src.risk import RiskManager
 
 
 @dataclass
@@ -75,7 +75,7 @@ class MultiWindowResult:
 
 
 def run_multi_window_backtest(
-    strategy_factory: Callable[[], "Strategy"],  # noqa: F821 — Strategy from engine.strategy
+    strategy_factory: Callable[[], "Strategy"],  # noqa: F821 — Strategy from src.strategy
     provider_name: str,
     home: str,
     ticker: str,
@@ -96,7 +96,7 @@ def run_multi_window_backtest(
     without network access.
     """
     if get_data_fn is None:
-        from engine.data import DataFeed
+        from src.data import DataFeed
         feed = DataFeed(home)
         get_data_fn = feed.get_historical
 

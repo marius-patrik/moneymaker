@@ -3,8 +3,8 @@
 import pathlib
 import pytest
 
-from engine.config import get_home
-from engine.installer import (
+from src.config import get_home
+from src.installer import (
     MANIFEST_FILE,
     install_strategies,
     _bundled_dir,

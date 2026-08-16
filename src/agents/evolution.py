@@ -17,8 +17,8 @@ import datetime as dt
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from engine.agents.forker import fork_and_eval, ForkResult
-from engine.optimizer import default_objective
+from src.agents.forker import fork_and_eval, ForkResult
+from src.optimizer import default_objective
 
 
 @dataclass

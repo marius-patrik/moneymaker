@@ -21,7 +21,7 @@ from typing import Optional
 
 import pandas as pd
 
-from engine.accounts import CredentialStore
+from src.accounts import CredentialStore
 
 
 class DataProvider(ABC):

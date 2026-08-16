@@ -12,16 +12,16 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from engine.accounts import AccountManager, CredentialStore
-from engine.data import DataFeed
-from engine.engine import Simulator
-from engine.logger import TradeLogger
-from engine.multiwindow import run_multi_window_backtest
-from engine.optimizer import default_objective, grid_search
-from engine.providers import PROVIDERS, make_provider
-from engine.providers.simulated import SimulatedExecutionProvider
-from engine.risk import RiskManager
-from engine.strategy import BUILTIN_STRATEGIES, load_strategies
+from src.accounts import AccountManager, CredentialStore
+from src.data import DataFeed
+from src.engine import Simulator
+from src.logger import TradeLogger
+from src.multiwindow import run_multi_window_backtest
+from src.optimizer import default_objective, grid_search
+from src.providers import PROVIDERS, make_provider
+from src.providers.simulated import SimulatedExecutionProvider
+from src.risk import RiskManager
+from src.strategy import BUILTIN_STRATEGIES, load_strategies
 
 
 class ServerState:

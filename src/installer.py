@@ -17,7 +17,7 @@ VERSION_FILE = ".version"
 
 
 def _bundled_dir() -> pathlib.Path:
-    """Bundled strategies are in strategies/ at the repo root, sibling of the engine/ package."""
+    """Bundled strategies are in strategies/ at the repo root, sibling of src/."""
     return pathlib.Path(__file__).parent.parent / "strategies"
 
 
@@ -143,7 +143,7 @@ def run_upgrade(home: str) -> None:
 
 def check_version(home: str) -> None:
     """Write current version to home dir; warn if it changed since last run."""
-    from engine import __version__
+    from src import __version__
     version_path = os.path.join(home, VERSION_FILE)
     if os.path.exists(version_path):
         with open(version_path) as f:

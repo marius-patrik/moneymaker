@@ -32,8 +32,8 @@ from typing import Optional
 
 import pandas as pd
 
-from engine.accounts import CredentialStore
-from engine.data_providers.base import DataProvider
+from src.accounts import CredentialStore
+from src.data_providers.base import DataProvider
 
 
 class SimulatedDataProvider(DataProvider):

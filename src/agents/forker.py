@@ -18,8 +18,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from engine.multiwindow import run_multi_window_backtest
-from engine.optimizer import default_objective
+from src.multiwindow import run_multi_window_backtest
+from src.optimizer import default_objective
 
 
 @dataclass

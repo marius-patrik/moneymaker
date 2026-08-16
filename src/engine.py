@@ -12,11 +12,11 @@ from typing import Optional
 
 import pandas as pd
 
-from engine.data import DataFeed
-from engine.logger import Trade, TradeLogger
-from engine.providers.base import ExecutionProvider
-from engine.risk import RiskManager
-from engine.strategy import Bar, Strategy, StrategyContext
+from src.data import DataFeed
+from src.logger import Trade, TradeLogger
+from src.providers.base import ExecutionProvider
+from src.risk import RiskManager
+from src.strategy import Bar, Strategy, StrategyContext
 
 
 class Simulator:
@@ -178,7 +178,7 @@ class MultiBarSimulator:
         logger: TradeLogger,
         primary_ticker: str = "",
     ):
-        from engine.strategy import MultiBarStrategy
+        from src.strategy import MultiBarStrategy
         if not isinstance(strategy, MultiBarStrategy):
             raise TypeError(
                 f"MultiBarSimulator requires a MultiBarStrategy subclass, "

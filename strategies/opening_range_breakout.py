@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from engine.strategy import Bar, Strategy, StrategyContext, reset_session_if_new_day
+from src.strategy import Bar, Strategy, StrategyContext, reset_session_if_new_day
 
 
 class OpeningRangeBreakoutStrategy(Strategy):

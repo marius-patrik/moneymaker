@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
-from engine.accounts import AccountInfo, CredentialStore
+from src.accounts import AccountInfo, CredentialStore
 
 
 @dataclass
