@@ -21,6 +21,13 @@ export function fmtDollar(n: number | undefined | null): string {
   return sign + "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function pnlColor(n: number): string {
-  return n >= 0 ? "text-profit" : "text-loss";
+/**
+ * Colour for a P&L figure.
+ *
+ * Exactly zero is neutral: a session that took no trades, or closed flat,
+ * is not a win and should not be coloured like one.
+ */
+export function pnlColor(n: number | null | undefined): string {
+  if (n == null || n === 0) return "text-muted-foreground";
+  return n > 0 ? "text-profit" : "text-loss";
 }

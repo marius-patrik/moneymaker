@@ -325,6 +325,54 @@ function RankingsPanel() {
   );
 }
 
+/** Last few background runs, so the page shows history rather than nothing. */
+function RecentRuns() {
+  const [jobs, setJobs] = useState<Job[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => api.jobs.list()
+      .then((r) => { if (alive) setJobs(r.jobs.slice(0, 5)); })
+      .catch(() => {});
+    tick();
+    const t = setInterval(tick, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  if (jobs.length === 0) return null;
+
+  return (
+    <Card className="elevated">
+      <CardContent className="p-0">
+        <div className="border-b px-4 py-2.5">
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Recent runs
+          </span>
+        </div>
+        <div className="divide-y">
+          {jobs.map((j) => (
+            <div key={j.job_id} className="flex items-center gap-3 px-4 py-2.5">
+              {j.status === "running"
+                ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    j.status === "succeeded" ? "bg-profit"
+                    : j.status === "failed" ? "bg-loss" : "bg-muted-foreground"}`} />}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium">{j.kind}</span>
+                  <span className="truncate font-mono text-[11px] text-muted-foreground">{j.label}</span>
+                </div>
+              </div>
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                {j.created_at.slice(11, 16)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // -------------------------------------------------------------------- jobs
 
 function JobsPanel() {
@@ -427,8 +475,14 @@ export function Research() {
           <TabsTrigger value="rankings">Rankings</TabsTrigger>
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
         </TabsList>
-        <TabsContent value="fork" className="pt-4"><ForkEvalPanel strategies={strategies} /></TabsContent>
-        <TabsContent value="evolve" className="pt-4"><EvolvePanel strategies={strategies} /></TabsContent>
+        <TabsContent value="fork" className="space-y-4 pt-4">
+          <ForkEvalPanel strategies={strategies} />
+          <RecentRuns />
+        </TabsContent>
+        <TabsContent value="evolve" className="space-y-4 pt-4">
+          <EvolvePanel strategies={strategies} />
+          <RecentRuns />
+        </TabsContent>
         <TabsContent value="rankings" className="pt-4"><RankingsPanel /></TabsContent>
         <TabsContent value="jobs" className="pt-4"><JobsPanel /></TabsContent>
       </Tabs>

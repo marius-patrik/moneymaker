@@ -211,3 +211,7 @@ shipping with the repo was labelled as the user's own — it now reports
 built-in / bundled / custom by checking the bundled strategies directory.
 Pipeline diagram nodes overlapped because Dagre was told 150px while the
 node had no fixed width; both agree now and the labels truncate.
+
+### Zero P&L was coloured as a win (DONE 2026-08-16)
+pnlColor used `n >= 0`, so a session that took no trades rendered $0.00 in
+profit green. Zero and null are neutral now; only a genuine gain is green.
