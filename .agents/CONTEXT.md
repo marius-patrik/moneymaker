@@ -260,7 +260,7 @@ the fade-strategy design decision.
 Version bumped to 0.3.0.
 
 **Strategy install/upgrade mechanism:**
-- `engine/installer.py`: hash-tracked copy of bundled strategies to home dir.
+- `src/installer.py`: hash-tracked copy of bundled strategies to home dir.
   Manifest stored at `~/.moneymaker/.strategy_manifest.json`. Tracks SHA-256 of
   installed files; on upgrade, skips user-modified files and reports conflicts.
   `--force` flag overwrites all regardless.
@@ -269,7 +269,7 @@ Version bumped to 0.3.0.
 - 8 tests in `tests/test_installer.py` cover: first install, idempotent run,
   conflict detection, force overwrite, new-file-in-home reinstall.
 
-**Version tracking:** `engine/config.py` calls `check_version(home)` on every
+**Version tracking:** `src/config.py` calls `check_version(home)` on every
 `get_home()` invocation. Writes current version to `~/.moneymaker/.version`;
 prints a notice to stderr if the package was upgraded since last run.
 
@@ -282,7 +282,7 @@ files, report conflicts, let user decide per conflict.
 PROPOSALS.md, QUESTIONS.md, PRD.md, TASKS.md, HANDOFF.md) moved from repo root to
 `.agents/`. README updated to reference new paths. BLOCKERS.md and DEFERRED.md added.
 
-**Strategy.params() / from_params() / FORKS (engine/strategy.py):**
+**Strategy.params() / from_params() / FORKS (src/strategy.py):**
 - `params()` classmethod: returns `{param_name: default}` via `inspect.signature`.
   Enables machine-readable parameter discovery by agents without reading source.
 - `from_params(dict)` classmethod: instantiates a strategy from a params dict,
@@ -291,7 +291,7 @@ PROPOSALS.md, QUESTIONS.md, PRD.md, TASKS.md, HANDOFF.md) moved from repo root t
   compare via fork-eval. Format is `(label, strategy_name, params_dict)` — strategy
   names (strings) resolved at eval time via `load_strategies`, no import cycles.
 
-**engine/agents/ (new package):**
+**src/agents/ (new package):**
 - `forker.py`: `fork_and_eval(forks, ...) → ForkSetResult`. Runs N (name, cls, params)
   triples over identical windows, ranks by `default_objective`, returns sorted
   ForkSetResult with `.winner` pointing to the top-scoring fork.

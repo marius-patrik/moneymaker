@@ -145,6 +145,7 @@ for a shared directory across multiple clones).
   evaluations/       rolling fork-eval score trajectories (JSON)
   calendars/         cached economic release date schedules (JSON)
   credentials/       credentials.json, permissions locked to owner
+  logs/              server.log / server.error.log (when run as a service)
   accounts.json      multi-account registry
 ```
 
@@ -178,7 +179,7 @@ moneymaker credentials clear --provider fred
 ## Market data providers
 
 Historical and live price data is abstracted behind `DataProvider`
-(`engine/data_providers/base.py`). The default is `yfinance` (free, no key).
+(`src/data_providers/base.py`). The default is `yfinance` (free, no key).
 
 ```
 moneymaker backtest --strategy trend_momentum --ticker "GC=F" \
@@ -216,7 +217,7 @@ retail_sales_spike_filtered(calendar_series="us_retail_sales")
 # us_cpi          → FRED CPIAUCSL
 # us_nfp          → FRED PAYEMS
 # us_pce          → FRED PCE
-# ... see engine/econ_calendar.py for the full list
+# ... see src/econ_calendar.py for the full list
 
 # Or use a FRED series ID directly:
 retail_sales_spike_fade(calendar_series="RSXFS")
@@ -233,7 +234,7 @@ moneymaker credentials set --provider fred --key api_key --env-var FRED_API_KEY
 ## Execution providers
 
 Where fills and account data come from is abstracted behind
-`ExecutionProvider` (`engine/providers/base.py`). Strategy logic, risk
+`ExecutionProvider` (`src/providers/base.py`). Strategy logic, risk
 sizing, and trade logging never know or care which provider is in use.
 
 ```
@@ -245,13 +246,13 @@ moneymaker providers
   paper balances, full parity with the account/credential surface a real
   provider would have.
 - **`trading212_demo`, `ibkr_paper`, `oanda_practice`** — stubs. Each
-  class's docstring in `engine/providers/*.py` documents exactly what
+  class's docstring in `src/providers/*.py` documents exactly what
   API calls are needed to finish it.
 
 **Adding a real provider:** subclass `ExecutionProvider`, implement
 `authenticate()`, `list_accounts()`, `get_account()`, `create_account()`,
 `execute_order()`, and `get_account_balance()` against the broker's real
-API, then register the class in `engine/providers/__init__.py`'s
+API, then register the class in `src/providers/__init__.py`'s
 `PROVIDERS` dict.
 
 `is_live` must be `True` on any provider that can place real-money

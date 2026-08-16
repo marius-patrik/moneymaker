@@ -4,10 +4,10 @@
 
 - **Engine**: backtest, live-paper, multi-window backtest, grid-search optimizer.
   Simulated execution provider with full account parity. HTTP+JSON API server.
-  Fork-eval + hill-climbing evolution (engine/agents/). Rolling fork-eval with
+  Fork-eval + hill-climbing evolution (src/agents/). Rolling fork-eval with
   score trajectory tracking. MultiBarSimulator for multi-ticker strategies.
 - **Data providers**: yfinance (default), Alpaca, CSV, Simulated (Brownian + fixture).
-  DataProvider ABC in engine/data_providers/. --data-provider CLI flag.
+  DataProvider ABC in src/data_providers/. --data-provider CLI flag.
 - **Economic calendar**: FRED vintage dates API, SimulatedCalendar, BLSCalendar stub.
   Named aliases (us_retail_sales → FRED RSXFS, etc.). Cached locally.
 - **Strategies**: `retail_sales_spike` (v1), `retail_sales_spike_filtered` (v2,
@@ -35,8 +35,8 @@ Hash-tracked install/upgrade. Version tracking. upgrade-strategies, upgrade comm
 ### Phase 4: Agent capabilities + fork system [complete — 2026-08-16]
 - Docs moved to .agents/; BLOCKERS.md + DEFERRED.md added.
 - Strategy.params(), from_params(), FORKS class variable.
-- engine/agents/forker.py: fork_and_eval() — run N strategy variants, rank by score.
-- engine/agents/evolution.py: evolve() — hill-climb numeric params.
+- src/agents/forker.py: fork_and_eval() — run N strategy variants, rank by score.
+- src/agents/evolution.py: evolve() — hill-climb numeric params.
 - CLI: --param KEY=VALUE on backtest/live; fork-eval and evolve subcommands.
 - retail_sales_spike_fade.py: fade strategy with FORKS wiring to continuation variant.
 - 12 new tests in tests/test_agents.py.

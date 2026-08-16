@@ -38,8 +38,8 @@ window is noisier than the threshold, stand down for the session. Default 0.0
 (disabled). Recommended starting value ~0.0020 (0.20%).
 
 ### Multi-symbol confirmation (DONE 2026-08-16, Phase 6)
-`MultiBarStrategy` base class in engine/strategy.py; `MultiBarSimulator` in
-engine/engine.py. Strategies declare `tickers = [primary, secondary, ...]` and
+`MultiBarStrategy` base class in src/strategy.py; `MultiBarSimulator` in
+src/engine.py. Strategies declare `tickers = [primary, secondary, ...]` and
 implement `on_secondary_bar(ctx, bar, ticker)` to accumulate confirmation signals.
 
 ### Other strategy ideas
@@ -80,11 +80,11 @@ across clones must set `MONEYMAKER_HOME` explicitly.
 after each append. Strategies set `max_bars` to cap memory use.
 
 ### Data provider abstraction (DONE 2026-08-16, P014)
-`engine/data_providers/` package with DataProvider ABC. yfinance, Alpaca, CSV,
+`src/data_providers/` package with DataProvider ABC. yfinance, Alpaca, CSV,
 Simulated providers. `--data-provider` and `--data-provider-path` CLI flags.
 
 ### Economic release calendar (DONE 2026-08-16, P008)
-`engine/econ_calendar.py` with FRED, BLS stub, and Simulated implementations.
+`src/econ_calendar.py` with FRED, BLS stub, and Simulated implementations.
 Named aliases, local caching, fail-open behavior. `calendar_series` param on
 spike strategies.
 

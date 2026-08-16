@@ -20,11 +20,11 @@ _(none currently open)_
 **Q2 — Strategy install: user-editable or system-managed?** _(Resolved 2026-08-16)_
 Editable copies. Merge strategy is context-dependent: skip user-modified files,
 report conflicts, let user decide per conflict. `--force` flag available for
-full overwrite. Implemented in `engine/installer.py`.
+full overwrite. Implemented in `src/installer.py`.
 
 **Q3 — EconCalendar: series ID taxonomy** _(Resolved 2026-08-16)_
 Both approaches implemented: direct series IDs (e.g. "RSXFS") and named aliases
-(e.g. "us_retail_sales"). Alias table in `engine/econ_calendar.py` covers the
+(e.g. "us_retail_sales"). Alias table in `src/econ_calendar.py` covers the
 main US releases (retail sales, CPI, PCE, NFP, unemployment, GDP, ISM, housing).
 
 **Q4 — Volume in Bar: what's the scope?** _(Resolved 2026-08-16)_
@@ -37,8 +37,8 @@ init_stop_dist`, then advances `ctx.stop_price` using `trailing_stop_pct`.
 No engine changes needed.
 
 **Q6 — P012 architecture: SignalStore vs MultiBarStrategy** _(Resolved 2026-08-16)_
-Option B: `MultiBarStrategy` base class. Implemented in `engine/strategy.py`
-and `engine/engine.py`. Strategies declare `tickers` list and implement
+Option B: `MultiBarStrategy` base class. Implemented in `src/strategy.py`
+and `src/engine.py`. Strategies declare `tickers` list and implement
 `on_secondary_bar(ctx, bar, ticker)`.
 
 **Q7 — P013 default volatility threshold** _(Resolved 2026-08-16)_
@@ -49,4 +49,4 @@ is a reasonable starting point; user can tune via `--param` or FORKS.
 `DataProvider` ABC exposes: `get_historical(ticker, start, end, interval) ->
 pd.DataFrame` (required) and `get_last_price(ticker) -> (float, datetime)`
 (optional, raises NotImplementedError for batch-only providers like CSV).
-`is_live: bool` flag indicates live-price support. See `engine/data_providers/base.py`.
+`is_live: bool` flag indicates live-price support. See `src/data_providers/base.py`.

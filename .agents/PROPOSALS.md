@@ -11,7 +11,7 @@ Status tags: `[proposed]` `[adopted]` `[rejected]` `[deferred]`
 
 **P001 — CLI strategy param injection** `[adopted]`
 `--param key=value` (repeatable) wired to `backtest`, `live`, and `backtest-multi`
-commands. Implemented in `engine/cli.py` via `_parse_param_overrides()`, which
+commands. Implemented in `src/cli.py` via `_parse_param_overrides()`, which
 infers types from the strategy's `__init__` signature defaults.
 
 **P002 — Volume field in Bar** `[adopted]`
@@ -44,7 +44,7 @@ that dict, ignoring unknown keys. CLI uses both for `--param` injection and
 `factory()` in multi-window backtest.
 
 **P008 — Release-date calendar integration** `[adopted]`
-`engine/econ_calendar.py`:
+`src/econ_calendar.py`:
 - `EconCalendar` ABC, `get_release_dates(start, end) -> list[date]`
 - `FREDCalendar`: FRED vintage dates API; caches to `~/.moneymaker/calendars/`
   (1-day TTL); requires `fred.api_key` credential
@@ -77,7 +77,7 @@ end; `status()` API includes `"open_pnl"` key.
 ## Strategy research
 
 **P011 — Continuous rolling evaluation** `[adopted]`
-`rolling_fork_eval()` in `engine/agents/forker.py` slides a window of
+`rolling_fork_eval()` in `src/agents/forker.py` slides a window of
 `window_days` forward by `step_days`, appends results to
 `~/.moneymaker/evaluations/<strategy>_<ticker>_rolling.json`. Skips already-
 evaluated windows on re-run. CLI: `fork-eval --rolling --rolling-start DATE
@@ -86,13 +86,13 @@ command reads all rolling eval files and prints score-trajectory table with
 trend labels (improving/degrading/flat).
 
 **P012 — Multi-symbol confirmation** `[adopted]`
-`MultiBarStrategy` base class in `engine/strategy.py`:
+`MultiBarStrategy` base class in `src/strategy.py`:
 - `tickers: list[str]` class var (first = primary)
 - `on_secondary_bar(ctx, bar, ticker)` — default no-op; override to capture
   confirmation signals into `ctx.extra`
 - `on_bar(ctx, bar)` still drives position management on primary ticker
 
-`MultiBarSimulator` in `engine/engine.py`:
+`MultiBarSimulator` in `src/engine.py`:
 - Merges `{ticker: DataFrame}` event streams, sorted by timestamp
 - Routes primary bars to `Simulator.feed_bar()`, secondary bars to
   `strategy.on_secondary_bar()`
@@ -109,7 +109,7 @@ Logged to `ctx.extra["stand_down_reason"]` when triggered.
 ## Data ingestion
 
 **P014 — Market data provider abstraction** `[adopted]`
-`engine/data_providers/` package with:
+`src/data_providers/` package with:
 - `DataProvider` ABC (`get_historical`, optional `get_last_price`)
 - `YFinanceDataProvider`: wraps existing DataFeed, backward compatible
 - `AlpacaDataProvider`: free US equity data via alpaca-py, disk cache
@@ -123,7 +123,7 @@ CLI: `--data-provider NAME` and `--data-provider-path PATH` on `backtest`,
 ## Install / packaging
 
 **P-INSTALL — Strategy install + merge mechanism** `[adopted]`
-Implemented in `engine/installer.py`. Bundled strategies in `moneymaker/bundled/`
+Implemented in `src/installer.py`. Bundled strategies in `moneymaker/bundled/`
 (package data). `install-strategies` copies to `~/.moneymaker/strategies/`;
 `upgrade-strategies` skips user-modified files (hash check), reports conflicts.
 
