@@ -9,6 +9,9 @@ working provider is `simulated`. Real-broker providers (Trading 212 demo,
 Interactive Brokers paper, OANDA practice) are scaffolded but deliberately
 left as stubs — see "Execution providers" below.
 
+**License:** personal use only — see `LICENSE`. External contributions are
+not accepted; see `CONTRIBUTING.md`.
+
 **If you're an agent picking this project up, read `.agents/CONTEXT.md`
 first.** It has the design decisions, bugs found and fixed, and what's
 actually been verified vs. not — context that isn't visible from the code
@@ -36,10 +39,10 @@ moneymaker providers
 moneymaker accounts create --name "main" --balance 10000
 moneymaker accounts list
 
-moneymaker backtest --strategy retail_sales_spike --ticker "ES=F" \
+moneymaker backtest --strategy retail_sales_spike_filtered --ticker "ES=F" \
     --start 2026-06-01 --end 2026-08-01 --interval 5m
 
-moneymaker live --strategy retail_sales_spike --ticker "ES=F" \
+moneymaker live --strategy retail_sales_spike_filtered --ticker "ES=F" \
     --end-time 11:00 --poll-seconds 30
 
 moneymaker log --session <session-name-printed-above>
@@ -59,36 +62,45 @@ moneymaker log --session <session-name-printed-above>
   PRD.md              product requirements (scope, non-requirements)
   BLOCKERS.md         active blockers preventing progress
   DEFERRED.md         explicitly deferred items with triggers for revisiting
+  TASKS.md            current session task list
 
 engine/                             Python package (import as `engine.*`)
-  config.py          filesystem-first data dir resolution (~/.moneymaker by default)
-  accounts.py        AccountManager (multi-account) + CredentialStore
-  data.py            historical/live price data via yfinance, disk-cached
-  strategy.py        Strategy interface, built-in strategies, drop-in loading
-  risk.py            position sizing from % account risk
-  logger.py          Trade record + CSV session logging
-  engine.py          Simulator — the loop shared by backtest & live modes
-  installer.py       strategy install/upgrade with hash-tracked merge
-  multiwindow.py     multi-window backtest aggregation
-  optimizer.py       grid-search optimizer with train/test split
-  server.py          HTTP+JSON API (stdlib only, no extra deps)
-  cli.py             argparse CLI entry point (command: `moneymaker`)
+  config.py           filesystem-first data dir resolution (~/.moneymaker default)
+  accounts.py         AccountManager (multi-account) + CredentialStore
+  data.py             historical/live price data via yfinance, disk-cached (legacy)
+  strategy.py         Strategy + MultiBarStrategy interfaces, built-in strategies
+  risk.py             position sizing from % account risk
+  logger.py           Trade record + CSV session logging
+  engine.py           Simulator + MultiBarSimulator — bar-feed loops
+  installer.py        strategy install/upgrade with hash-tracked merge
+  multiwindow.py      multi-window backtest aggregation
+  optimizer.py        grid-search optimizer with train/test split
+  econ_calendar.py    economic release calendar (FRED, BLS stub, Simulated)
+  server.py           HTTP+JSON API (stdlib only, no extra deps)
+  cli.py              argparse CLI entry point (command: `moneymaker`)
   agents/
-    forker.py        fork_and_eval() — compare N strategy variants over identical windows
-    evolution.py     evolve() — hill-climb numeric params to find better configuration
+    forker.py         fork_and_eval() + rolling_fork_eval() — compare N strategy variants
+    evolution.py      evolve() — hill-climb numeric params to find better configuration
+  data_providers/
+    base.py           DataProvider interface
+    yfinance_provider.py  yfinance (free, no key, disk-cached)
+    alpaca.py         Alpaca Markets (free US equity data, API key required)
+    csv_provider.py   load history from local CSV or Parquet file
+    simulated.py      Brownian motion + fixture replay (no network)
   providers/
-    base.py          ExecutionProvider interface
-    simulated.py     the only implemented provider
-    trading212.py    stub
-    ibkr.py          stub
-    oanda.py         stub
+    base.py           ExecutionProvider interface
+    simulated.py      the only implemented execution provider
+    trading212.py     stub
+    ibkr.py           stub
+    oanda.py          stub
 
 strategies/                         bundled strategies (loaded at runtime)
-  retail_sales_spike_filtered.py    data-release breakout with range-based stops
-  retail_sales_spike_fade.py        data-release fade (enter against spike, target baseline)
-  momentum_continuation.py          stub — follow spike on large surprises
-  opening_range_breakout.py         stub — ORB at 9:30 ET
-  vwap_reversion.py                 stub — VWAP mean reversion (needs volume in Bar)
+  retail_sales_spike_filtered.py    data-release breakout — range-based stop + breakout entry
+  retail_sales_spike_fade.py        data-release fade — enter against spike, target baseline
+  momentum_continuation.py          spike-momentum with trailing stop
+  opening_range_breakout.py         ORB at 9:30 ET; 5/15/30m window variants
+  vwap_reversion.py                 intraday VWAP mean-reversion with regime filter
+  trend_momentum.py                 daily MA crossover (profitable on GC=F, gc_evolved params)
   example_momentum.py               example/template for custom strategies
 
 tests/
@@ -105,11 +117,13 @@ Override with `--data-dir` or the `MONEYMAKER_HOME` env var.
 
 ```
 ~/.moneymaker/
-  strategies/       drop-in .py files — any Strategy subclass auto-loads
-  sessions/          trade log CSVs, one per backtest/live run
-  data_cache/          cached historical bars (parquet)
-  credentials/           credentials.json, permissions locked to owner
-  accounts.json             multi-account registry
+  strategies/        drop-in .py files — any Strategy subclass auto-loads
+  sessions/          trade log CSVs + JSON results, one per run
+  data_cache/        cached historical bars (parquet)
+  evaluations/       rolling fork-eval score trajectories (JSON)
+  calendars/         cached economic release date schedules (JSON)
+  credentials/       credentials.json, permissions locked to owner
+  accounts.json      multi-account registry
 ```
 
 ## Accounts and credentials
@@ -130,21 +144,72 @@ Credentials are never stored in plaintext by default:
 ```
 # Recommended: register a reference to an env var. The secret itself
 # never touches disk.
-export OANDA_API_TOKEN=xxxxx
-moneymaker credentials set --provider oanda_practice --key api_token --env-var OANDA_API_TOKEN
-
-# Or store the value directly (file is chmod 600, but it is still
-# plaintext on disk — treat it like a password vault).
-moneymaker credentials set --provider trading212_demo --key api_key --value xxxxx
+export FRED_API_KEY=xxxxx
+moneymaker credentials set --provider fred --key api_key --env-var FRED_API_KEY
 
 moneymaker credentials list   # always masked, never prints secret values
-moneymaker credentials clear --provider oanda_practice
+moneymaker credentials clear --provider fred
+```
+
+## Market data providers
+
+Historical and live price data is abstracted behind `DataProvider`
+(`engine/data_providers/base.py`). The default is `yfinance` (free, no key).
+
+```
+moneymaker backtest --strategy trend_momentum --ticker "GC=F" \
+    --start 2025-01-01 --end 2026-01-01 --interval 1d \
+    --data-provider yfinance
+
+# Load from a local file instead:
+moneymaker backtest --strategy trend_momentum --ticker "GC=F" \
+    --start 2025-01-01 --end 2026-01-01 \
+    --data-provider csv --data-provider-path /path/to/GC_F.csv
+```
+
+Available providers:
+
+- **`yfinance`** (default) — free, no key, 15-second delayed. Intraday data limited to ~60 days.
+- **`alpaca`** — free US equity data (API key required). Better for equities than futures.
+  ```
+  moneymaker credentials set --provider alpaca --key api_key --env-var ALPACA_API_KEY
+  moneymaker credentials set --provider alpaca --key api_secret --env-var ALPACA_API_SECRET
+  ```
+- **`csv`** — load from a local CSV or Parquet file. Useful for custom data sources.
+- **`simulated`** — synthetic Brownian motion or fixture replay; no network needed. Ideal for unit tests.
+
+## Economic release calendar
+
+Strategies can gate themselves to actual announcement days rather than trading
+on every session. Supported calendar sources:
+
+```python
+# In a strategy constructor:
+retail_sales_spike_filtered(calendar_series="us_retail_sales")
+
+# Named aliases resolve to FRED series IDs:
+# us_retail_sales → FRED RSXFS
+# us_cpi          → FRED CPIAUCSL
+# us_nfp          → FRED PAYEMS
+# us_pce          → FRED PCE
+# ... see engine/econ_calendar.py for the full list
+
+# Or use a FRED series ID directly:
+retail_sales_spike_fade(calendar_series="RSXFS")
+```
+
+The calendar fetches vintage dates from FRED (when was the data first published?),
+caches them locally, and silently fails open (trades normally) if the API is
+unavailable. Requires a free FRED API key:
+
+```
+moneymaker credentials set --provider fred --key api_key --env-var FRED_API_KEY
 ```
 
 ## Execution providers
 
 Where fills and account data come from is abstracted behind
-`ExecutionProvider` (`moneymaker/providers/base.py`). Strategy logic, risk
+`ExecutionProvider` (`engine/providers/base.py`). Strategy logic, risk
 sizing, and trade logging never know or care which provider is in use.
 
 ```
@@ -157,16 +222,13 @@ moneymaker providers
   provider would have.
 - **`trading212_demo`, `ibkr_paper`, `oanda_practice`** — stubs. Each
   class's docstring in `engine/providers/*.py` documents exactly what
-  API calls are needed to finish it. They correctly raise
-  `NotImplementedError` (after a real credential-presence check) rather
-  than silently pretending to trade.
+  API calls are needed to finish it.
 
 **Adding a real provider:** subclass `ExecutionProvider`, implement
 `authenticate()`, `list_accounts()`, `get_account()`, `create_account()`,
 `execute_order()`, and `get_account_balance()` against the broker's real
-API, then register the class in `moneymaker/providers/__init__.py`'s
-`PROVIDERS` dict. Everything else — CLI, server, risk sizing, logging —
-needs zero changes.
+API, then register the class in `engine/providers/__init__.py`'s
+`PROVIDERS` dict.
 
 `is_live` must be `True` on any provider that can place real-money
 orders. `make_provider()` refuses to auto-construct those — wiring one up
@@ -190,6 +252,30 @@ class MyStrategy(Strategy):
 ```
 
 It's auto-discovered next time you run `strategies`, `backtest`, or `live`.
+
+### Multi-symbol strategies
+
+For strategies that need correlated data from multiple instruments (e.g. ES
+enters only when NQ confirms):
+
+```python
+from engine.strategy import MultiBarStrategy, StrategyContext, Bar
+
+class ESWithNQConfirmation(MultiBarStrategy):
+    name = "es_nq_confirm"
+    tickers = ["ES=F", "NQ=F"]   # first = primary (position management ticker)
+
+    def on_secondary_bar(self, ctx, bar, ticker):
+        ctx.extra[f"last_{ticker}"] = bar.price  # store for on_bar access
+
+    def on_bar(self, ctx, bar):
+        nq = ctx.extra.get("last_NQ=F")
+        if nq is None:
+            return  # no NQ data yet
+        # ... rest of entry logic
+```
+
+Run with `MultiBarSimulator.run_backtest({"ES=F": es_df, "NQ=F": nq_df})`.
 
 ## API server
 
@@ -220,20 +306,19 @@ pytest
 ```
 
 The test suite runs entirely against synthetic price data — no network
-calls, no live yfinance requests. `backtest`/`live` against real tickers
-does need network access to Yahoo Finance and hasn't been exercised
-against live data as part of this repo's own test suite; see
-`HANDOFF.md` if you're having an agent verify that end of things
-locally.
+calls, no live yfinance requests. All 45 tests pass on Python 3.11 and 3.12.
+CI runs on every push via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## Known limitations
 
 - yfinance can lag real-time by 15+ seconds and occasionally gaps data —
   fine for evaluating a strategy, not a substitute for a real broker feed.
-- The `simulated` provider is the only one that actually works end to end.
+- The `simulated` provider is the only execution provider that actually works end to end.
 - `RiskManager` position sizing assumes CFD/futures-style fractional
   sizing; adapt `position_size()` if you need whole-share constraints for
   equities.
+- `BLSCalendar` is a stub — BLS doesn't offer a clean vintage date API.
+  Use FRED equivalents or `SimulatedCalendar` instead.
 
 ## Testing across multiple windows
 
@@ -247,23 +332,16 @@ window can't dominate the picture.
 moneymaker backtest-multi --strategy retail_sales_spike_filtered --ticker "ES=F" \
     --windows "2026-06-01:2026-06-15,2026-06-15:2026-07-01,2026-07-01:2026-07-15,2026-07-15:2026-08-01" \
     --interval 5m
-```
 
-Windows that fail (bad ticker, no data available, etc.) are reported
-individually and excluded from the aggregate stats — one bad window
-doesn't crash the whole run.
+# Or auto-generate N equal windows:
+moneymaker backtest-multi --strategy trend_momentum --ticker "GC=F" \
+    --walk-forward 4 --wf-start 2022-01-01 --wf-end 2026-01-01 --interval 1d
+```
 
 ## Parameter optimization ("training")
 
 `optimize` grid-searches a strategy's parameters, scored via multi-window
 backtests, with an explicit train/test split.
-
-**Important framing:** this is not machine learning, and nothing here
-learns from live trading. It's systematic grid search — try every
-combination of the values you give it, score each on the training
-windows, then separately check the winners against held-out test windows
-they never touched during scoring. That split exists specifically to
-catch overfitting.
 
 ```
 moneymaker optimize --strategy retail_sales_spike_filtered --ticker "ES=F" \
@@ -273,23 +351,10 @@ moneymaker optimize --strategy retail_sales_spike_filtered --ticker "ES=F" \
     --top 5
 ```
 
-Always pass `--test-windows`. Without it you're only seeing train
-performance, which is exactly the number most prone to overfitting. The
-CLI flags any candidate that's profitable on train but losing on test —
-treat those with real suspicion, not just a shrug.
-
-With a realistic number of historical event days available (a monthly
-release, say), the amount of independent data to search over is small.
-Overfitting risk is real regardless of the train/test split. Treat
-optimizer output as a starting point for further live-paper validation,
-not a finished, trustworthy strategy.
-
-Both commands are also available via the API server:
-`POST /backtest-multi` and `POST /optimize` (see server section above).
+Always pass `--test-windows`. The CLI flags any candidate that's profitable
+on train but losing on test — treat those with real suspicion.
 
 ## Per-run parameter overrides
-
-Override any strategy parameter inline without modifying the strategy file:
 
 ```
 moneymaker backtest --strategy retail_sales_spike_filtered --ticker "ES=F" \
@@ -297,25 +362,26 @@ moneymaker backtest --strategy retail_sales_spike_filtered --ticker "ES=F" \
     --param min_spike_pct=0.001 --param base_bars=4
 ```
 
-Values are coerced to the correct type from the strategy's default signature
-(float, int, bool, or str). Unknown keys are rejected with a helpful error.
-
 ## Fork-eval and autonomous evolution
 
 `fork-eval` compares strategy variants (declared in `FORKS`) over identical
-windows and ranks them by the default objective score (mean P&L × consistency
-penalty):
+windows and ranks them by the default objective score:
 
 ```
+# One-shot comparison
 moneymaker fork-eval --strategy retail_sales_spike_fade --ticker "ES=F" \
     --windows "2026-06-18:2026-08-16"
+
+# Rolling mode: slide a window forward and accumulate score trajectories
+moneymaker fork-eval --strategy retail_sales_spike_fade --ticker "ES=F" \
+    --rolling --rolling-start 2025-01-01 --rolling-end 2026-08-16 \
+    --rolling-window 30 --rolling-step 7 --interval 1d
+
+# View accumulated trajectories across all strategies
+moneymaker rankings
 ```
 
-This compares `retail_sales_spike_fade` against `retail_sales_spike_filtered`
-over the same data and reports the winner empirically.
-
-`evolve` hill-climbs a strategy's numeric parameters to find a locally better
-configuration, logging every improvement:
+`evolve` hill-climbs a strategy's numeric parameters:
 
 ```
 moneymaker evolve --strategy retail_sales_spike_fade --ticker "ES=F" \
@@ -324,3 +390,4 @@ moneymaker evolve --strategy retail_sales_spike_fade --ticker "ES=F" \
 ```
 
 Both commands save full JSON results to `~/.moneymaker/sessions/`.
+Rolling eval results are saved to `~/.moneymaker/evaluations/`.

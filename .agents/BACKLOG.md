@@ -29,30 +29,48 @@ run for months. 8.3:1 realized R:R. Named fork `gc_evolved` in FORKS.
   trailing stop once profitable. 4 FORKS: mom_quick/base/strong/tight.
 - `opening_range_breakout` — ORB at 9:30 ET; 5/15/30m window variants.
   R:R bug fixed (target uses stop_dist, not orb_width). max_entry_slippage_pct filter.
-- `vwap_reversion` — intraday VWAP mean-reversion. Now implemented (Bar.volume
-  available after P002 engine fix). 4 FORKS: tight/standard/wide/loose.
+- `vwap_reversion` — intraday VWAP mean-reversion. Fully implemented.
+  Prior-day range regime filter reduces losses 98% on SPY. 4 FORKS.
 
-### Other strategy ideas (no stub yet)
+### Pre-release volatility filter (DONE 2026-08-16, Phase 6)
+`max_pre_range_pct` param on both spike strategies. If the pre-release baseline
+window is noisier than the threshold, stand down for the session. Default 0.0
+(disabled). Recommended starting value ~0.0020 (0.20%).
+
+### Multi-symbol confirmation (DONE 2026-08-16, Phase 6)
+`MultiBarStrategy` base class in engine/strategy.py; `MultiBarSimulator` in
+engine/engine.py. Strategies declare `tickers = [primary, secondary, ...]` and
+implement `on_secondary_bar(ctx, bar, ticker)` to accumulate confirmation signals.
+
+### Other strategy ideas
 - **News-sentiment overlay**: use a real-time news API to weight entry direction
   based on sentiment of the release headline (requires external data feed)
-- **Multi-symbol confirmation**: only enter ES trade if NQ or RTY is moving
-  in the same direction (reduces solo-instrument false signals)
-- **Pre-release volatility filter**: skip sessions where 30-min pre-release
-  volatility is already elevated (suggesting the market already moved)
+- **ES/NQ confirmation strategy**: concrete implementation of MultiBarStrategy
+  for the ES entry + NQ confirmation use case
 
 ---
 
 ## Engine / infrastructure
 
-### Strategy/home sync gap (found 2026-08-16)
-`load_strategies` now scans the repo's `strategies/` dir first, then
-`~/.moneymaker/strategies/`. The divergence bug is fixed, but the
-`~/.moneymaker/strategies/` drop-in dir is now effectively redundant for
-bundled strategies — consider deprecating it or making it explicit-override-only.
+### Strategy/home sync gap (DONE — installer.py)
+`load_strategies` scans repo's `strategies/` dir, then `~/.moneymaker/strategies/`
+as explicit overrides only. `install-strategies` / `upgrade-strategies` handle sync.
 
 ### Volume support in Bar (DONE 2026-08-16, P002)
 `Bar.volume: float = 0.0` added. Simulator passes `row["Volume"]` when present.
-`vwap_reversion` now fully implemented using this field.
+
+### ctx.bars ring buffer (DONE 2026-08-16, P005)
+`StrategyContext.max_bars: int = 0` (0 = unlimited). Simulator trims bars list
+after each append. Strategies set `max_bars` to cap memory use.
+
+### Data provider abstraction (DONE 2026-08-16, P014)
+`engine/data_providers/` package with DataProvider ABC. yfinance, Alpaca, CSV,
+Simulated providers. `--data-provider` and `--data-provider-path` CLI flags.
+
+### Economic release calendar (DONE 2026-08-16, P008)
+`engine/econ_calendar.py` with FRED, BLS stub, and Simulated implementations.
+Named aliases, local caching, fail-open behavior. `calendar_series` param on
+spike strategies.
 
 ### Stub provider implementation
 Three broker stubs (`trading212_demo`, `ibkr_paper`, `oanda_practice`) need
@@ -60,8 +78,9 @@ real API calls wired. Decision to implement ANY of these is always a separate,
 explicit discussion — never done as a side effect of another task.
 
 ### Live data feed beyond yfinance
-yfinance is best-effort / 15-second delayed. For a real live-paper setup,
-need a direct broker WebSocket feed or a paid data provider (Polygon.io, etc.).
+yfinance is best-effort / 15-second delayed. Alpaca is now available as a data
+provider for US equities. For futures (ES=F, GC=F), a dedicated futures data
+feed (Rithmic, CQG, IB TWS) is needed for real-money live mode.
 Currently acceptable for strategy development; not acceptable for real-money.
 
 ---
@@ -104,18 +123,14 @@ Systematic rule enumeration across historical data:
   walk-forward splits, and only surface rules where the test-window P&L is
   positive AND the 95% CI of per-trade P&L excludes zero (bootstrap resampling
   of the trades, not the bars).
-- Longer-term: a "strategy compiler" that takes a high-level description
-  ("fade sharp morning spikes on data releases") and outputs parameterized
-  Python Strategy subclasses ready for backtesting.
 
 ---
 
 ## Operational
 
-### GitHub repo visibility confirmation
-Grok created the repo as private (per HANDOFF.md guardrails). Never explicitly
-confirmed. Run `gh repo view marius-patrik/moneymaker --json visibility` to verify.
+### GitHub repo visibility — CONFIRMED PRIVATE (2026-08-16)
+Confirmed via `gh repo view marius-patrik/moneymaker --json visibility`.
 
-### CI / automated testing
-No CI pipeline. All 23 tests run locally. Consider adding a GitHub Actions
-workflow that runs `pytest` on every push to master.
+### CI / automated testing — ACTIVE (2026-08-16)
+GitHub Actions workflow at `.github/workflows/ci.yml`. Runs `pytest` on every
+push. 45 tests pass on ubuntu-latest, Python 3.11 and 3.12.
