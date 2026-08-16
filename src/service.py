@@ -19,6 +19,7 @@ import os
 import pathlib
 import platform
 import shutil
+import time
 import subprocess
 import sys
 from typing import Optional
@@ -134,22 +135,60 @@ def uninstall() -> None:
 
 # ------------------------------------------------------------ start/stop
 
-def _service_start() -> None:
+def _domain() -> str:
+    return f"gui/{os.getuid()}"
+
+
+def _wait_until(predicate, timeout: float = 20.0, interval: float = 0.4) -> bool:
+    """Poll until predicate() is true. Returns False on timeout."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval)
+    return False
+
+
+def _is_loaded() -> bool:
     if _is_macos():
-        _run(["launchctl", "kickstart", f"gui/{os.getuid()}/{LABEL}"])
+        return _run(["launchctl", "print", f"{_domain()}/{LABEL}"]).returncode == 0
+    r = _run(["systemctl", "--user", "is-active", UNIT])
+    return r.stdout.strip() == "active"
+
+
+def _service_start() -> None:
+    target = _target_path()
+    if not target.exists():
+        raise RuntimeError("Service is not installed — run `moneymaker service install`.")
+    if _is_macos():
+        # bootstrap loads the job and RunAtLoad starts it. If it is already
+        # loaded, kickstart is the way to get it running.
+        if _is_loaded():
+            _run(["launchctl", "kickstart", f"{_domain()}/{LABEL}"])
+        else:
+            _run(["launchctl", "bootstrap", _domain(), str(target)])
     else:
         _run(["systemctl", "--user", "start", UNIT])
     print("Started.")
 
 
-def _service_stop() -> None:
+def _service_stop(quiet: bool = False) -> None:
+    """
+    Fully stop the service and wait for it to go away.
+
+    On macOS `launchctl kill` only signals — KeepAlive then revives the job,
+    so a real stop means booting it out of the domain. Waiting matters
+    because restart otherwise races the old process for the port.
+    """
     if _is_macos():
-        # `kill` signals the job; the plist's KeepAlive won't revive it on a
-        # clean stop because SuccessfulExit=false only restarts on failure.
-        _run(["launchctl", "kill", "SIGTERM", f"gui/{os.getuid()}/{LABEL}"])
+        _run(["launchctl", "bootout", f"{_domain()}/{LABEL}"])
     else:
         _run(["systemctl", "--user", "stop", UNIT])
-    print("Stopped.")
+
+    if not _wait_until(lambda: not _is_loaded()):
+        print("warning: service did not stop within 20s", file=sys.stderr)
+    if not quiet:
+        print("Stopped.")
 
 
 def status() -> None:
@@ -182,7 +221,7 @@ def dispatch(action: str, home: str, host: str = "127.0.0.1", port: int = 8787,
     elif action == "stop":
         _service_stop()
     elif action == "restart":
-        _service_stop()
+        _service_stop(quiet=True)
         _service_start()
     elif action == "status":
         status()

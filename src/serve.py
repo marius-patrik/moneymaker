@@ -21,6 +21,7 @@ import os
 import pathlib
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -63,6 +64,13 @@ def _spawn(cmd: list[str], cwd: pathlib.Path, name: str,
     return proc
 
 
+def _port_in_use(host: str, port: int) -> bool:
+    """Check before spawning, so a collision is one clear error not a restart loop."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex((host, port)) == 0
+
+
 def _ui_deps_installed() -> bool:
     return (_UI_DIR / "node_modules").is_dir()
 
@@ -75,6 +83,11 @@ def _build_ui() -> None:
 def serve(home: str, host: str = "127.0.0.1", port: int = 8787,
           ui_port: int = 5173, prod: bool = False, no_ui: bool = False) -> int:
     """Run the API (and UI) in the foreground. Returns a process exit code."""
+    if _port_in_use(host, port):
+        print(f"error: {host}:{port} is already in use — another server is running.\n"
+              f"       Stop it, or pass --port to use a different one.", file=sys.stderr)
+        return 3
+
     bun = shutil.which("bun")
     want_ui = not no_ui
 
