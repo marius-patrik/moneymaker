@@ -69,14 +69,14 @@ class TradeLogger:
                     f"{t.pnl_pct:.4%}" if t.pnl_pct is not None else "",
                 ])
 
-    def summary(self) -> dict:
+    def summary(self, open_pnl: Optional[float] = None) -> dict:
         closed = [t for t in self.trades if t.pnl is not None]
-        if not closed:
+        if not closed and open_pnl is None:
             return {"trades": 0}
         wins = [t for t in closed if t.pnl > 0]
         losses = [t for t in closed if t.pnl <= 0]
         total_pnl = sum(t.pnl for t in closed)
-        return {
+        result = {
             "trades": len(closed),
             "wins": len(wins),
             "losses": len(losses),
@@ -87,20 +87,26 @@ class TradeLogger:
             "best_trade": max((t.pnl for t in closed), default=0.0),
             "worst_trade": min((t.pnl for t in closed), default=0.0),
         }
+        if open_pnl is not None:
+            result["open_pnl"] = open_pnl
+        return result
 
-    def print_summary(self) -> None:
-        s = self.summary()
+    def print_summary(self, open_pnl: Optional[float] = None) -> None:
+        s = self.summary(open_pnl=open_pnl)
         print("\n" + "=" * 50)
         print(f"SESSION SUMMARY — {self.session_path}")
         print("=" * 50)
-        if s["trades"] == 0:
+        if s["trades"] == 0 and open_pnl is None:
             print("No trades were taken this session.")
             return
-        print(f"Trades:      {s['trades']}  (wins: {s['wins']}, losses: {s['losses']})")
-        print(f"Win rate:    {s['win_rate']:.1%}")
-        print(f"Total P&L:   {s['total_pnl']:+.2f}")
-        print(f"Avg win:     {s['avg_win']:+.2f}")
-        print(f"Avg loss:    {s['avg_loss']:+.2f}")
-        print(f"Best trade:  {s['best_trade']:+.2f}")
-        print(f"Worst trade: {s['worst_trade']:+.2f}")
+        if s["trades"] > 0:
+            print(f"Trades:      {s['trades']}  (wins: {s['wins']}, losses: {s['losses']})")
+            print(f"Win rate:    {s['win_rate']:.1%}")
+            print(f"Total P&L:   {s['total_pnl']:+.2f}")
+            print(f"Avg win:     {s['avg_win']:+.2f}")
+            print(f"Avg loss:    {s['avg_loss']:+.2f}")
+            print(f"Best trade:  {s['best_trade']:+.2f}")
+            print(f"Worst trade: {s['worst_trade']:+.2f}")
+        if open_pnl is not None:
+            print(f"Open P&L:    {open_pnl:+.2f}  (unrealized)")
         print("=" * 50)

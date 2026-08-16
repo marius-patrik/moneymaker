@@ -119,7 +119,14 @@ class Simulator:
                 print(f"[{now}] fetch error: {e}", file=sys.stderr)
             self.stopped.wait(poll_seconds)
         self.logger.write_csv()
-        self.logger.print_summary()
+        open_pnl = self._open_pnl(self.ctx.bars[-1].price if self.ctx.bars else None)
+        self.logger.print_summary(open_pnl=open_pnl)
+
+    def _open_pnl(self, last_price: Optional[float]) -> Optional[float]:
+        if self._open_trade is None or last_price is None:
+            return None
+        sign = 1 if self._open_trade.direction == "long" else -1
+        return sign * (last_price - self._open_trade.entry_price) * self._open_trade.size
 
     def status(self) -> dict:
         return {
@@ -133,5 +140,6 @@ class Simulator:
             "closed_trades": [t.to_dict() for t in self.logger.trades],
             "bars_seen": len(self.ctx.bars),
             "last_price": self.ctx.bars[-1].price if self.ctx.bars else None,
+            "open_pnl": self._open_pnl(self.ctx.bars[-1].price if self.ctx.bars else None),
             "summary": self.logger.summary(),
         }
