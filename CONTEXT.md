@@ -165,6 +165,49 @@ The strategy's edge problem is structural, not a threshold-tuning problem.
   `~/.moneymaker/strategies/` at launch, or move drop-in loading to the repo dir.
 - Stub providers: not yet implemented; decision to implement is always explicit.
 
+## Session: R:R overhaul + strategy expansion (2026-08-16, continued)
+
+This session iterated on the structural R:R problem identified in the prior session.
+
+**Root cause diagnosed:** The strategy was entering on almost every trading day (40
+trades in 60 days) by picking up tiny sub-0.05% "spikes" at 8:30 from routine daily
+noise — not actual data releases. Retail sales is a monthly release; the strategy was
+treating every 8:30 bar as a signal. Direction on these noise entries was ~35% — below
+the ~64% needed to break even at the observed avg_win/avg_loss ratio.
+
+**Breakout entry + range-based stops (implemented):**
+- Entry: wait for price to break the post-spike basing range, rather than entering
+  during consolidation. Eliminates entries into immediate reversals.
+- Stop: far edge of basing range + buffer (≈3–5 pts in practice vs prior 34 pts).
+- Target: stop_distance × target_rr (default 2:1), dynamic rather than fixed %.
+- Slippage guard: reject entry if price has already moved >0.3% past the range edge.
+- Result: avg loss tightened from -76 to -60; win rate 35% (vs 32.5%); P&L -1,083
+  (slightly worse than -1,007 — tighter stops help per-trade but direction still random).
+
+**Strategy/home sync fixed:** `load_strategies` now scans the repo's `strategies/`
+dir first, then `~/.moneymaker/strategies/` as explicit overrides only. Prior loading
+order had user drop-ins silently win over bundled strategies.
+
+**Three strategy stubs added** to `strategies/` as placeholders for future work:
+- `momentum_continuation`: follow spike direction on large surprises; trailing stop.
+- `opening_range_breakout`: ORB at 9:30 ET; 5/15/30m window variants.
+- `vwap_reversion`: VWAP mean reversion (requires volume in Bar — engine needs extending).
+
+**BACKLOG.md created:** ML evolution engine (Optuna/walk-forward) and deterministic
+strategy finding engine (predicate enumeration + bootstrap significance) planned.
+
+**Current state of `retail_sales_spike_filtered`:** Breakout entry, range stop, 2:1
+target, 35% win rate over 60-day window. Still not profitable. The direction problem
+is not solved by entry timing — needs either a genuine directional signal (not just
+spike direction), or restricting to actual monthly release days only.
+
+**For next session:** The win rate is effectively random at 35%. Two directions worth
+exploring: (1) date-filter the strategy to only run on actual retail sales release
+dates (removes 30+ noise trades); (2) the `min_spike_pct` parameter can gate on real
+releases — calibrate it to the actual retail sales spike size (≥0.10–0.15% vs the
+median 0.03% noise). Both approaches may recover signal, since the true retail sales
+release days showed larger, directional moves than the noise baseline.
+
 ## Ownership handoff
 
 Starting from whenever you (the agent reading this) pick this up: you
