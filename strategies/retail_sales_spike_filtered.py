@@ -77,6 +77,7 @@ class FilteredDataReleaseStrategy(Strategy):
         min_spike_pct: float = 0.0,
         min_surprise_ratio: float = 0.0,
         max_pre_range_pct: float = 0.0,
+        calendar_series: str = "",
     ):
         self.release_time = release_time
         self.baseline_minutes = baseline_minutes
@@ -90,6 +91,7 @@ class FilteredDataReleaseStrategy(Strategy):
         self.min_spike_pct = min_spike_pct
         self.min_surprise_ratio = min_surprise_ratio
         self.max_pre_range_pct = max_pre_range_pct
+        self.calendar_series = calendar_series
 
     def _release_dt(self, bar_time: dt.datetime) -> dt.datetime:
         return dt.datetime.combine(bar_time.date(), self.release_time, tzinfo=bar_time.tzinfo)
@@ -121,6 +123,20 @@ class FilteredDataReleaseStrategy(Strategy):
         if ctx.trades_taken >= self.max_trades_per_session:
             return
         if bar.time < release_dt or bar.time >= ctx.hard_exit_time:
+            return
+
+        # --- Calendar gate: skip sessions that are not release days ---
+        if self.calendar_series and "is_release_day" not in ctx.extra:
+            from engine.econ_calendar import get_calendar
+            from engine.config import get_home
+            today = bar.time.date()
+            try:
+                cal = get_calendar(self.calendar_series, get_home())
+                dates = cal.get_release_dates(today, today)
+                ctx.extra["is_release_day"] = bool(dates)
+            except Exception:
+                ctx.extra["is_release_day"] = True  # fail-open: trade if calendar unavailable
+        if self.calendar_series and not ctx.extra.get("is_release_day", True):
             return
 
         # --- Baseline + pre-noise ---

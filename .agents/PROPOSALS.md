@@ -27,12 +27,11 @@ infers types from the strategy's `__init__` signature defaults.
 if `end >= today`, invalidate after `cache_ttl_seconds` (default 1 hour).
 Prevents stale intraday data in daily live-paper runs.
 
-**P005 — ctx.bars memory bound** `[deferred]`
-No ring buffer will be implemented. Instead, document the O(N²) scanning risk:
-strategies that do O(N) scans over `ctx.bars` per bar are O(N²) total across
-a long multi-day backtest (~4 800 bars for 60 days × 5m). Current backtests are
-fast enough; if they slow down, add a `max_bars` param then.
-_Action: add a one-line warning comment to StrategyContext.bars, close proposal._
+**P005 — ctx.bars memory bound** `[adopted]`
+`StrategyContext.max_bars: int = 0` (0 = unlimited). `Simulator.feed_bar` trims
+`ctx.bars` to the last `max_bars` entries after each append. Strategies with
+absolute-time lookbacks must set `max_bars` large enough to cover their window.
+Default 0 preserves existing behavior.
 
 **P006 — Dangling position at backtest end** `[adopted]`
 `run_backtest` force-closes any open position at the last bar with
@@ -44,17 +43,18 @@ and returns `{name: default}`. `Strategy.from_params(dict)` instantiates from
 that dict, ignoring unknown keys. CLI uses both for `--param` injection and
 `factory()` in multi-window backtest.
 
-**P008 — Release-date calendar integration** `[proposed]`
-Design decisions confirmed (2026-08-16):
-- Data sources: FRED API + BLS public API + simulated (hardcoded list for testing)
-- Auth: same `credentials set` / `CredentialStore` system as execution providers
-- Caching: schedule cached locally under `~/.moneymaker/calendars/`; refreshed
-  once per day for current/future dates, frozen for past dates
-- Scope: general `EconCalendar` service usable by any strategy (not just
-  retail_sales) — strategies pass a `fred_series_id` or `bls_series_id` param
-
-_Still open: CLI integration (`--data-provider` flag or injected via strategy param?),
-series ID taxonomy, fallback behavior when FRED/BLS are unreachable._
+**P008 — Release-date calendar integration** `[adopted]`
+`engine/econ_calendar.py`:
+- `EconCalendar` ABC, `get_release_dates(start, end) -> list[date]`
+- `FREDCalendar`: FRED vintage dates API; caches to `~/.moneymaker/calendars/`
+  (1-day TTL); requires `fred.api_key` credential
+- `BLSCalendar`: stub (raises NotImplementedError — no clean BLS vintage API)
+- `SimulatedCalendar`: in-memory fixture for unit tests
+- Named aliases (`us_retail_sales` → `fred:RSXFS`, etc.) + direct series IDs
+- `get_calendar(alias_or_id, home)` factory
+- Strategies: `calendar_series: str = ""` param on both spike strategies;
+  if set, gate is checked once per session (cached in ctx.extra["is_release_day"]);
+  fail-open if calendar unavailable so backtests run without API key
 
 **P008a — Spike-fade direction (counter-spike entry)** `[adopted]`
 `strategies/retail_sales_spike_fade.py` fully implemented as a separate strategy
@@ -76,43 +76,47 @@ end; `status()` API includes `"open_pnl"` key.
 
 ## Strategy research
 
-**P011 — Continuous rolling evaluation** `[proposed]`
-User confirmed: definitely implement. Design:
-- `--rolling` flag on `fork-eval`; `--retrain-every N` on `evolve`
-- Results stored in `~/.moneymaker/evaluations/<strategy>_rolling.json`
-- `rankings` CLI command reads all evaluation files, prints score-trajectory table
-_Next: implement in engine/agents/forker.py + CLI wiring._
+**P011 — Continuous rolling evaluation** `[adopted]`
+`rolling_fork_eval()` in `engine/agents/forker.py` slides a window of
+`window_days` forward by `step_days`, appends results to
+`~/.moneymaker/evaluations/<strategy>_<ticker>_rolling.json`. Skips already-
+evaluated windows on re-run. CLI: `fork-eval --rolling --rolling-start DATE
+--rolling-end DATE --rolling-window DAYS --rolling-step DAYS`. New `rankings`
+command reads all rolling eval files and prints score-trajectory table with
+trend labels (improving/degrading/flat).
 
-**P012 — Multi-symbol confirmation** `[proposed]`
-User confirmed: implement. Architecture choice still open:
-- **Option A (SignalStore)**: shared dict keyed by `(ticker, signal_name)`;
-  strategies write/read without engine changes. Simple, no new abstractions.
-- **Option B (MultiBarStrategy)**: new base class that registers multiple tickers;
-  engine feeds all bar streams to it. Cleaner but more engine surgery.
-_Decision needed before implementation._
+**P012 — Multi-symbol confirmation** `[adopted]`
+`MultiBarStrategy` base class in `engine/strategy.py`:
+- `tickers: list[str]` class var (first = primary)
+- `on_secondary_bar(ctx, bar, ticker)` — default no-op; override to capture
+  confirmation signals into `ctx.extra`
+- `on_bar(ctx, bar)` still drives position management on primary ticker
 
-**P013 — Pre-release volatility filter** `[proposed]`
-User confirmed: implement. Add `max_pre_range_pct` gate to both
-`retail_sales_spike_filtered` and `retail_sales_spike_fade`. If the pre-release
-baseline window is noisier than the threshold, stand down for the session.
-Default `max_pre_range_pct = 0.0020` (0.20%) — needs confirmation.
+`MultiBarSimulator` in `engine/engine.py`:
+- Merges `{ticker: DataFrame}` event streams, sorted by timestamp
+- Routes primary bars to `Simulator.feed_bar()`, secondary bars to
+  `strategy.on_secondary_bar()`
+- `run_backtest(data: dict[str, pd.DataFrame])` entry point
+
+**P013 — Pre-release volatility filter** `[adopted]`
+`max_pre_range_pct: float = 0.0` added to both `retail_sales_spike_filtered`
+and `retail_sales_spike_fade`. Gate is part of the `signal_evaluated` validity
+check. Default 0.0 = disabled (no behavior change); recommended value ~0.0020.
+Logged to `ctx.extra["stand_down_reason"]` when triggered.
 
 ---
 
 ## Data ingestion
 
-**P014 — Market data provider abstraction** `[proposed]`
-New feature (2026-08-16). Separate from execution providers.
-
-Design decisions confirmed:
-- Providers: `yfinance` (keep existing), `fred` (FRED API), `bls` (BLS public API),
-  `simulated` (replay hardcoded/CSV data for unit tests and dry runs)
-- Auth: `CredentialStore` (same system as execution providers)
-- Caching: parquet under `~/.moneymaker/data/`; TTL already handled by P004
-- Scope: general; CLI gets `--data-provider` flag on `backtest` / `live` / `backtest-multi`
-
-_Still open: DataProvider interface spec (what methods?), how simulated provider
-loads its data (CSV path param? inline fixture?), error handling for missing API keys._
+**P014 — Market data provider abstraction** `[adopted]`
+`engine/data_providers/` package with:
+- `DataProvider` ABC (`get_historical`, optional `get_last_price`)
+- `YFinanceDataProvider`: wraps existing DataFeed, backward compatible
+- `AlpacaDataProvider`: free US equity data via alpaca-py, disk cache
+- `CSVDataProvider`: load history from local CSV or Parquet file
+- `SimulatedDataProvider`: Brownian motion + fixture replay, no network needed
+CLI: `--data-provider NAME` and `--data-provider-path PATH` on `backtest`,
+`live`, and `backtest-multi`. `run_live` accepts `get_price_fn` param.
 
 ---
 

@@ -115,6 +115,47 @@ def reset_session_if_new_day(ctx: StrategyContext, bar: Bar) -> None:
             ctx.extra.pop(key, None)
 
 
+class MultiBarStrategy(Strategy):
+    """
+    Strategy that observes bars from multiple tickers before deciding to trade.
+
+    Subclass this to implement cross-asset confirmation filters, relative-value
+    strategies, or any strategy that needs correlated data from more than one
+    instrument (e.g. ES=F enters only when NQ=F confirms the move).
+
+    How the engine feeds bars:
+      - Bars from the PRIMARY ticker (tickers[0]) are fed via the standard
+        on_bar() call — same as a regular Strategy.
+      - Bars from SECONDARY tickers are fed via on_secondary_bar(). Store
+        whatever you need in ctx.extra so on_bar() can access it.
+
+    MultiBarSimulator (engine/engine.py) handles the multi-ticker logic.
+    Existing Simulator is unchanged and still works for single-ticker strategies.
+
+    Example:
+        class ESWithNQConfirmation(MultiBarStrategy):
+            name = "es_nq_confirm"
+            tickers = ["ES=F", "NQ=F"]   # ES = primary, NQ = confirmation
+
+            def on_secondary_bar(self, ctx, bar, ticker):
+                ctx.extra[f"last_{ticker}"] = bar.price
+
+            def on_bar(self, ctx, bar):
+                nq = ctx.extra.get("last_NQ=F")
+                if nq is None:
+                    return  # no NQ data yet
+                # ... rest of entry logic
+    """
+
+    tickers: list[str] = []  # override in subclass; first entry is the primary
+
+    def on_secondary_bar(self, ctx: StrategyContext, bar: Bar, ticker: str) -> None:
+        """Called for each bar from a secondary ticker. Default is a no-op."""
+        pass
+
+    # on_bar() is still abstract (inherited from Strategy) — subclass must implement it.
+
+
 class RetailSalesSpikeStrategy(Strategy):
     """
     Data-release fade/breakout strategy:

@@ -148,3 +148,75 @@ class Simulator:
             "open_pnl": self._open_pnl(self.ctx.bars[-1].price if self.ctx.bars else None),
             "summary": self.logger.summary(),
         }
+
+
+class MultiBarSimulator:
+    """Simulator for MultiBarStrategy — merges bar streams from multiple tickers.
+
+    The primary ticker (strategy.tickers[0]) is treated like the single ticker
+    in a normal Simulator: on_bar() is called and positions are managed on it.
+    Secondary tickers feed on_secondary_bar() only — they inform the strategy
+    but orders are always placed on the primary ticker.
+
+    Usage:
+        strategy = MyMultiBarStrategy()
+        sim = MultiBarSimulator(strategy, provider, account_id, risk, logger,
+                                primary_ticker="ES=F")
+        # Run backtest with data from all required tickers
+        sim.run_backtest({
+            "ES=F": es_df,
+            "NQ=F": nq_df,
+        })
+    """
+
+    def __init__(
+        self,
+        strategy,  # MultiBarStrategy
+        provider: ExecutionProvider,
+        account_id: str,
+        risk: RiskManager,
+        logger: TradeLogger,
+        primary_ticker: str = "",
+    ):
+        from engine.strategy import MultiBarStrategy
+        if not isinstance(strategy, MultiBarStrategy):
+            raise TypeError(
+                f"MultiBarSimulator requires a MultiBarStrategy subclass, "
+                f"got {type(strategy).__name__}"
+            )
+        self.strategy = strategy
+        self._sim = Simulator(strategy, provider, account_id, risk, logger,
+                              ticker=primary_ticker or (strategy.tickers[0] if strategy.tickers else ""))
+
+    @property
+    def ctx(self):
+        return self._sim.ctx
+
+    @property
+    def logger(self):
+        return self._sim.logger
+
+    def run_backtest(self, data: dict[str, "pd.DataFrame"]) -> None:
+        """data: {ticker: OHLCV DataFrame}. Primary ticker drives position management."""
+        import pandas as pd
+        primary = self._sim.ticker or (self.strategy.tickers[0] if self.strategy.tickers else "")
+        secondaries = [t for t in self.strategy.tickers if t != primary]
+
+        # Build unified event list: (timestamp, ticker, row)
+        events: list[tuple] = []
+        for ticker, df in data.items():
+            for ts, row in df.iterrows():
+                events.append((ts.to_pydatetime(), ticker, float(row["Close"]),
+                               float(row["Volume"]) if "Volume" in row.index else 0.0))
+        events.sort(key=lambda e: e[0])
+
+        for ts, ticker, close, volume in events:
+            bar = Bar(time=ts, price=close, volume=volume)
+            if ticker == primary:
+                self._sim.feed_bar(bar)
+            elif ticker in secondaries:
+                # Route to the strategy's secondary-bar handler
+                self.strategy.on_secondary_bar(self._sim.ctx, bar, ticker)
+
+        self._sim.logger.write_csv()
+        self._sim.logger.print_summary()
