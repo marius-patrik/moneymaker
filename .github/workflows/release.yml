@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
+      packages: write   # kept for a future GHCR container publish
       id-token: write   # needed by pypa/gh-action-pypi-publish OIDC
 
     steps:
@@ -78,15 +78,10 @@ jobs:
             --title "${{ steps.bump.outputs.tag }}" \
             dist/*
 
-      # ---- GitHub Packages (PyPI-compatible registry) ----
-
-      # GitHub Packages supports neither --skip-existing nor PEP 740
-      # attestations, so both are left off. The version bump above guarantees
-      # each run publishes a version that does not exist yet.
-      - name: Publish to GitHub Packages
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://upload.pkg.github.com/
-          user: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          attestations: false
+      # NOTE: there is deliberately no GitHub Packages publish step here.
+      # GitHub Packages has no PyPI registry — it supports npm, Maven, Gradle,
+      # NuGet, RubyGems and Docker/Container only. upload.pkg.github.com is a
+      # legacy endpoint that returns 405 for Python uploads.
+      #
+      # The wheel and sdist are attached to the GitHub Release above instead:
+      #   pip install https://github.com/marius-patrik/moneymaker/releases/download/vX.Y.Z/moneymaker-X.Y.Z-py3-none-any.whl
