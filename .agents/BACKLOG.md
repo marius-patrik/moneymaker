@@ -197,3 +197,9 @@ figures, uppercase metric labels, an equity-curve chart on the dashboard
 
 Gotcha worth remembering: a component-layer class loses to a utility class,
 so `.metric-label` on a `CardTitle` was overridden by its `text-2xl`.
+
+### Trading desk (DONE 2026-08-16)
+The Trade tab was a full-width form with a dead lower half. Rebuilt as a
+two-column desk: price chart (GET /api/history) with last price, change,
+session high/low, beside a compact ticket that quotes automatically as the
+ticker is typed and shows notional against buying power.

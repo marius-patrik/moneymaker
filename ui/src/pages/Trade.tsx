@@ -13,16 +13,58 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AnimatedIcon, MotionHost } from "@/components/ui/animated-icon";
 import { useToast } from "@/components/ui/toast";
-import { api, type LiveStatus, type Strategy, type Account } from "@/lib/api";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { api, type LiveStatus, type Strategy, type Account, type PriceHistory } from "@/lib/api";
 import { fmt, fmtDollar, fmtPct, pnlColor } from "@/lib/utils";
 
 // -------------------------------------------------------- manual ticket
 
-function OrderTicket({ accounts }: { accounts: Account[] }) {
+function PriceChart({ hist, loading }: { hist: PriceHistory | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+      </div>
+    );
+  }
+  if (!hist || hist.bars.length < 2) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+        <CandlestickChart className="h-6 w-6 text-muted-foreground" />
+        <p className="text-xs text-muted-foreground">No price data</p>
+      </div>
+    );
+  }
+  const up = hist.change >= 0;
+  const stroke = up ? "hsl(var(--profit))" : "hsl(var(--loss))";
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={hist.bars} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+        <defs>
+          <linearGradient id="px" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={stroke} stopOpacity={0.25} />
+            <stop offset="100%" stopColor={stroke} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="t" hide />
+        <YAxis domain={["dataMin", "dataMax"]} hide />
+        <Tooltip
+          formatter={(v: number) => [fmt(v), "Price"]}
+          labelFormatter={(l) => String(l).replace("T", " ")}
+          contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))",
+                          borderRadius: 12, fontSize: 12 }} />
+        <Area type="monotone" dataKey="c" stroke={stroke} strokeWidth={1.75}
+              fill="url(#px)" dot={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function Desk({ accounts }: { accounts: Account[] }) {
   const { toast } = useToast();
   const [form, setForm] = useState({ ticker: "GC=F", size: "1", account_id: "" });
-  const [quote, setQuote] = useState<{ price: number; time: string } | null>(null);
-  const [quoting, setQuoting] = useState(false);
+  const [hist, setHist] = useState<PriceHistory | null>(null);
+  const [loadingPx, setLoadingPx] = useState(false);
   const [placing, setPlacing] = useState<"long" | "short" | null>(null);
 
   useEffect(() => {
@@ -31,18 +73,21 @@ function OrderTicket({ accounts }: { accounts: Account[] }) {
     }
   }, [accounts]);
 
-  async function refreshQuote() {
-    if (!form.ticker) return;
-    setQuoting(true);
-    try {
-      const q = await api.orders.quote(form.ticker);
-      setQuote({ price: q.price, time: q.time });
-    } catch (e) {
-      setQuote(null);
-      toast(e instanceof Error ? e.message : "Quote failed", "error");
-    }
-    setQuoting(false);
-  }
+  // Quote follows the ticker rather than waiting for a button press — a desk
+  // shows a price without being asked.
+  useEffect(() => {
+    const t = form.ticker.trim();
+    if (!t) { setHist(null); return; }
+    let alive = true;
+    setLoadingPx(true);
+    const id = setTimeout(() => {
+      api.orders.history(t, "1h", 5)
+        .then((h) => { if (alive) setHist(h); })
+        .catch(() => { if (alive) setHist(null); })
+        .finally(() => { if (alive) setLoadingPx(false); });
+    }, 450);
+    return () => { alive = false; clearTimeout(id); };
+  }, [form.ticker]);
 
   async function place(direction: "long" | "short") {
     setPlacing(direction);
@@ -59,84 +104,106 @@ function OrderTicket({ accounts }: { accounts: Account[] }) {
     setPlacing(null);
   }
 
-  const notional = quote ? quote.price * Number(form.size || 0) : null;
+  const last = hist?.last ?? null;
+  const up = (hist?.change ?? 0) >= 0;
+  const notional = last != null ? last * Number(form.size || 0) : null;
+  const acct = accounts.find((a) => a.account_id === form.account_id);
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Order ticket</CardTitle>
-        <CardDescription>
-          Place a single order by hand. Paper accounts only — the simulated
-          provider is the only one wired for execution.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      {/* chart */}
+      <Card className="elevated order-2 lg:order-1">
+        <CardContent className="space-y-3 p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="flex items-baseline gap-3">
+              <span className="font-mono text-sm font-semibold">{hist?.ticker ?? form.ticker}</span>
+              <span className="text-2xl font-semibold tabular-nums tracking-tight">
+                {last != null ? fmt(last) : "—"}
+              </span>
+              {hist && hist.bars.length > 1 && (
+                <span className={`text-sm font-medium tabular-nums ${up ? "text-profit" : "text-loss"}`}>
+                  {up ? "+" : ""}{fmt(hist.change)} ({fmtPct(hist.change_pct)})
+                </span>
+              )}
+            </div>
+            <div className="flex gap-4 text-[11px] text-muted-foreground">
+              <span>H {hist?.high != null ? fmt(hist.high) : "—"}</span>
+              <span>L {hist?.low != null ? fmt(hist.low) : "—"}</span>
+              <span>{hist?.interval ?? "1h"} · 5d</span>
+            </div>
+          </div>
+          <div className="h-64">
+            <PriceChart hist={hist} loading={loadingPx} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ticket */}
+      <Card className="elevated order-1 lg:order-2">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Order ticket</CardTitle>
+          <CardDescription className="text-[11px]">
+            Paper accounts only — the simulated provider is the one wired for fills.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
           <Field label="Ticker" value={form.ticker} mono
-                 onValueChange={(v) => { setForm((f) => ({ ...f, ticker: v })); setQuote(null); }} />
+                 onValueChange={(v) => setForm((f) => ({ ...f, ticker: v }))} />
           <Field label="Size" type="number" value={form.size}
                  onValueChange={(v) => setForm((f) => ({ ...f, size: v }))} />
-        </div>
-
-        <div className="space-y-1">
-          <Label htmlFor="ticket-account" className="text-xs">Account</Label>
-          <Select value={form.account_id}
-                  onValueChange={(v) => setForm((f) => ({ ...f, account_id: v }))}>
-            <SelectTrigger id="ticket-account" className="h-8 text-sm">
-              <SelectValue placeholder="Select account" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((a) => (
-                <SelectItem key={a.account_id} value={a.account_id}>
-                  {a.name} · {fmtDollar(a.balance)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* quote strip */}
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <div className="min-w-0">
-            <div className="metric-label">Last price</div>
-            <div className="font-mono text-lg font-bold tabular-nums">
-              {quote ? fmt(quote.price) : "—"}
-            </div>
-            {notional != null && (
-              <div className="text-[11px] text-muted-foreground">
-                notional {fmtDollar(notional)}
-              </div>
-            )}
+          <div className="space-y-1">
+            <Label htmlFor="ticket-account" className="text-xs">Account</Label>
+            <Select value={form.account_id}
+                    onValueChange={(v) => setForm((f) => ({ ...f, account_id: v }))}>
+              <SelectTrigger id="ticket-account" className="h-8 text-sm">
+                <SelectValue placeholder="Select account" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.account_id} value={a.account_id}>
+                    {a.name} · {fmtDollar(a.balance)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <MotionHost>
-            <Button size="sm" variant="outline" onClick={refreshQuote} disabled={quoting}>
-              {quoting ? <Loader2 className="h-4 w-4 animate-spin" />
-                       : <AnimatedIcon icon={RefreshCw} motionType="spin" className="h-4 w-4" />}
-              Quote
-            </Button>
-          </MotionHost>
-        </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <MotionHost>
-            <Button className="w-full bg-profit text-white hover:bg-profit/90"
-                    onClick={() => place("long")} disabled={!!placing || !form.ticker}>
-              {placing === "long" ? <Loader2 className="h-4 w-4 animate-spin" />
-                                  : <AnimatedIcon icon={ArrowUpRight} motionType="lift" className="h-4 w-4" />}
-              Buy / Long
-            </Button>
-          </MotionHost>
-          <MotionHost>
-            <Button className="w-full bg-loss text-white hover:bg-loss/90"
-                    onClick={() => place("short")} disabled={!!placing || !form.ticker}>
-              {placing === "short" ? <Loader2 className="h-4 w-4 animate-spin" />
-                                   : <AnimatedIcon icon={ArrowDownRight} motionType="lift" className="h-4 w-4" />}
-              Sell / Short
-            </Button>
-          </MotionHost>
-        </div>
-      </CardContent>
-    </Card>
+          <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3 text-xs">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Notional</span>
+              <span className="font-medium tabular-nums">
+                {notional != null ? fmtDollar(notional) : "—"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Buying power</span>
+              <span className="font-medium tabular-nums">
+                {acct ? fmtDollar(acct.balance) : "—"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <MotionHost>
+              <Button className="w-full bg-profit text-white hover:bg-profit/90"
+                      onClick={() => place("long")} disabled={!!placing || !form.ticker}>
+                {placing === "long" ? <Loader2 className="h-4 w-4 animate-spin" />
+                                    : <AnimatedIcon icon={ArrowUpRight} motionType="lift" className="h-4 w-4" />}
+                Buy
+              </Button>
+            </MotionHost>
+            <MotionHost>
+              <Button className="w-full bg-loss text-white hover:bg-loss/90"
+                      onClick={() => place("short")} disabled={!!placing || !form.ticker}>
+                {placing === "short" ? <Loader2 className="h-4 w-4 animate-spin" />
+                                     : <AnimatedIcon icon={ArrowDownRight} motionType="lift" className="h-4 w-4" />}
+                Sell
+              </Button>
+            </MotionHost>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -361,7 +428,7 @@ export function Trade() {
         </TabsList>
 
         <TabsContent value="manual" className="pt-4">
-          <OrderTicket accounts={accounts} />
+          <Desk accounts={accounts} />
         </TabsContent>
 
         <TabsContent value="strategy" className="pt-4">

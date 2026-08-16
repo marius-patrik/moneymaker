@@ -653,6 +653,41 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         return {"ticker": ticker, "price": price,
                 "time": ts.isoformat() if hasattr(ts, "isoformat") else str(ts)}
 
+    @api.get("/history/{ticker:path}")
+    def get_history(ticker: str, interval: str = "5m", days: int = 5,
+                    data_provider: str = "yfinance"):
+        """
+        Recent bars for the trading chart.
+
+        Kept deliberately small — a ticket chart wants shape and a current
+        level, not a full research dataset.
+        """
+        from src.data_providers import make_data_provider
+        end = dt.datetime.now()
+        start = end - dt.timedelta(days=max(1, days))
+        prov = make_data_provider(data_provider, state.home)
+        df = prov.get_historical(ticker, start.strftime("%Y-%m-%d"),
+                                 end.strftime("%Y-%m-%d"), interval=interval)
+        if df is None or len(df) == 0:
+            raise HTTPException(400, f"no bars for {ticker} at {interval}")
+
+        col = "Close" if "Close" in df.columns else df.columns[0]
+        bars = [
+            {"t": str(idx)[:19], "c": float(row)}
+            for idx, row in df[col].items()
+            if row == row          # drop NaN
+        ]
+        closes = [b["c"] for b in bars]
+        return {
+            "ticker": ticker, "interval": interval, "bars": bars[-400:],
+            "last": closes[-1] if closes else None,
+            "change": round(closes[-1] - closes[0], 4) if len(closes) > 1 else 0.0,
+            "change_pct": (round((closes[-1] / closes[0] - 1), 6)
+                           if len(closes) > 1 and closes[0] else 0.0),
+            "high": max(closes) if closes else None,
+            "low": min(closes) if closes else None,
+        }
+
     @api.post("/orders")
     def place_order(body: ManualOrderBody):
         """

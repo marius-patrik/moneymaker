@@ -75,6 +75,19 @@ export interface SessionEntry {
   last_trade?: string | null;
 }
 
+export interface PriceBar { t: string; c: number }
+
+export interface PriceHistory {
+  ticker: string;
+  interval: string;
+  bars: PriceBar[];
+  last: number | null;
+  change: number;
+  change_pct: number;
+  high: number | null;
+  low: number | null;
+}
+
 export interface EquityPoint {
   i: number;
   t: string;
@@ -272,6 +285,9 @@ export const api = {
       account_id?: string; closing?: boolean; reference_price?: number;
     }) => post<{ account_id: string; ticker: string; direction: string;
                  size: number; fill_price: number; balance: number }>("/orders", body),
+    history: (ticker: string, interval = "1h", days = 5) =>
+      get<PriceHistory>(
+        `/history/${encodeURIComponent(ticker)}?interval=${interval}&days=${days}`),
     quote: (ticker: string) =>
       get<{ ticker: string; price: number; time: string }>(
         `/quote/${encodeURIComponent(ticker)}`),
