@@ -116,6 +116,7 @@ ui/                                 React + TypeScript web UI (Bun + RSBuild)
     App.tsx                         routes + page transitions
     lib/api.ts                      typed client for the /api surface
     lib/useJob.ts                   polls a background job to completion
+    lib/useTheme.ts                 light/dark/system theme, persisted
     lib/utils.ts                    cn() + number/currency formatters
     components/ui/                  shadcn/ui primitives
     components/layout/Sidebar.tsx   desktop rail + mobile drawer
@@ -396,8 +397,12 @@ slide-over drawer behind a hamburger in the top bar; grids collapse to one
 or two columns and wide tables scroll inside their container. From `md` up
 you get the persistent rail, collapsible to icons.
 
+The theme follows your OS by default; Settings has a light/dark/system
+toggle, and the choice persists. An inline script resolves it before first
+paint, so there is no flash of the wrong palette.
+
 `Cmd/Ctrl+B` collapses the sidebar; `Cmd/Ctrl+,` opens settings; `Esc`
-closes the mobile drawer.
+closes the mobile drawer or dialog.
 
 ## Running as a service
 

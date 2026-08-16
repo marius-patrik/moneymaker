@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { KeyRound, Trash2, Loader2, Server, Database, FolderOpen } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { KeyRound, Trash2, Loader2, Server, Database, FolderOpen, Sun, Moon, Monitor } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,12 @@ import { Field } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
+import { useTheme, type Theme } from "@/lib/useTheme";
 import { api, type AppConfig, type Provider } from "@/lib/api";
 
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { toast } = useToast();
+  const { theme, setTheme } = useTheme();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [creds, setCreds] = useState<Record<string, Record<string, string>>>({});
@@ -70,6 +72,33 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
           {/* --- General --- */}
           <TabsContent value="general" className="space-y-3 pt-4">
+            <div className="space-y-2 rounded-md border p-3">
+              <Label className="text-xs font-semibold">Appearance</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: "light", label: "Light", icon: Sun },
+                  { value: "dark", label: "Dark", icon: Moon },
+                  { value: "system", label: "System", icon: Monitor },
+                ] as { value: Theme; label: string; icon: React.ElementType }[]).map(
+                  ({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      onClick={() => setTheme(value)}
+                      aria-pressed={theme === value}
+                      className={`flex items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs font-medium transition-colors ${
+                        theme === value
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
             {config ? (
               <div className="space-y-2 text-sm">
                 {[
