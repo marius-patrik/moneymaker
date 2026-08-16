@@ -215,6 +215,47 @@ def test_simulator_stop_loss_path(home):
     assert logger.trades[0].exit_reason == "stop"
 
 
+def test_simulator_trades_independently_across_multiple_days(home):
+    """
+    Regression test: a single continuous backtest spanning multiple
+    calendar days must let each day trade independently. Before
+    reset_session_if_new_day() existed, day one's leftover
+    trades_taken/hard_exit_time silently blocked every later day —
+    a multi-day backtest would only ever produce (at most) one trade
+    total, no matter how many valid setups appeared on later days.
+    """
+    strategy = RetailSalesSpikeStrategy()
+    provider = make_provider("simulated", home)
+    account = provider.create_account("test", starting_balance=10000)
+    risk = RiskManager(risk_pct=0.01)
+    logger = TradeLogger(home, "test_multi_day")
+    sim = Simulator(strategy, provider, account.account_id, risk, logger, ticker="TEST")
+
+    def day_bars(date, base_price):
+        base_time = dt.datetime.combine(date, dt.time(8, 20))
+        prices = [
+            base_price, base_price, base_price + 1, base_price, base_price,
+            base_price, base_price + 1, base_price, base_price + 0.5, base_price,
+            base_price + 20, base_price + 30, base_price + 25, base_price + 28, base_price + 27,
+            base_price + 27, base_price + 26,
+            base_price + 90,
+        ]
+        return [Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)) for i, p in enumerate(prices)]
+
+    for bar in day_bars(dt.date(2026, 7, 6), 5000):
+        sim.feed_bar(bar)
+    for bar in day_bars(dt.date(2026, 7, 7), 5100):
+        sim.feed_bar(bar)
+    for bar in day_bars(dt.date(2026, 7, 8), 5200):
+        sim.feed_bar(bar)
+
+    logger.write_csv()
+    summary = logger.summary()
+    # Each of the 3 days has an equally valid, independent setup — all
+    # three should trade, not just the first one the engine ever sees.
+    assert summary["trades"] == 3
+
+
 # --------------------------------------------------------------------------
 # Strategy loading from filesystem
 # --------------------------------------------------------------------------
@@ -297,3 +338,48 @@ def test_filtered_strategy_stands_down_on_flat_day(home):
     logger.write_csv()
     summary = logger.summary()
     assert summary.get("trades", 0) == 0
+
+
+def test_filtered_strategy_resets_signal_cache_across_days(home):
+    """
+    Regression test: the filtered strategy caches its surprise-filter
+    verdict (signal_evaluated/signal_valid) per session. Confirm that
+    cache is cleared on a new day too, not just trades_taken/hard_exit_time
+    — otherwise day 2 could inherit day 1's stand-down verdict even when
+    day 2's own price action clearly warrants a trade.
+    """
+    import importlib.util
+    import os
+    path = os.path.join(os.path.dirname(__file__), "..", "strategies", "retail_sales_spike_filtered.py")
+    spec = importlib.util.spec_from_file_location("retail_sales_spike_filtered", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    strategy = mod.FilteredDataReleaseStrategy()
+    provider = make_provider("simulated", home)
+    account = provider.create_account("test", starting_balance=10000)
+    risk = RiskManager(risk_pct=0.01)
+    logger = TradeLogger(home, "test_filtered_multi_day")
+    sim = Simulator(strategy, provider, account.account_id, risk, logger, ticker="TEST")
+
+    def real_spike_day(date, base):
+        base_time = dt.datetime.combine(date, dt.time(8, 20))
+        prices = [base, base, base + 1, base, base, base, base + 1, base, base + 0.5, base,
+                  base + 20, base + 30, base + 25, base + 28, base + 27, base + 27, base + 26, base + 90]
+        return [Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)) for i, p in enumerate(prices)]
+
+    def flat_day(date, base):
+        base_time = dt.datetime.combine(date, dt.time(8, 20))
+        prices = [base + 0.3 * ((-1) ** i) for i in range(22)]
+        return [Bar(time=base_time + dt.timedelta(minutes=i), price=float(p)) for i, p in enumerate(prices)]
+
+    for bar in real_spike_day(dt.date(2026, 7, 6), 5000):
+        sim.feed_bar(bar)
+    for bar in flat_day(dt.date(2026, 7, 7), 5000):
+        sim.feed_bar(bar)  # should stand down, no trade
+    for bar in real_spike_day(dt.date(2026, 7, 8), 5200):
+        sim.feed_bar(bar)  # should trade again — filter re-evaluated fresh, not inheriting day 2's stand-down
+
+    logger.write_csv()
+    summary = logger.summary()
+    assert summary["trades"] == 2  # day 1 and day 3 trade; day 2 (flat) correctly stands down

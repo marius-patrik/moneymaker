@@ -9,6 +9,12 @@ working provider is `simulated`. Real-broker providers (Trading 212 demo,
 Interactive Brokers paper, OANDA practice) are scaffolded but deliberately
 left as stubs — see "Execution providers" below.
 
+**If you're an agent picking this project up, read `PROJECT_HISTORY.md`
+first.** It has the design decisions, bugs found and fixed, and what's
+actually been verified vs. not — context that isn't visible from the code
+alone. If you're being handed this as an ongoing takeover rather than a
+one-off task, `AGENT_PROMPT.md` has the details of what that means.
+
 ## Install
 
 ```
@@ -201,3 +207,55 @@ locally.
 - `RiskManager` position sizing assumes CFD/futures-style fractional
   sizing; adapt `position_size()` if you need whole-share constraints for
   equities.
+
+## Testing across multiple windows
+
+A strategy that looks good on one day tells you very little. `backtest-multi`
+runs the same strategy across several independent historical windows and
+aggregates the results — total P&L, but also consistency (% of windows
+profitable, P&L standard deviation across windows) so one lucky or unlucky
+window can't dominate the picture.
+
+```
+moneymaker backtest-multi --strategy retail_sales_spike_filtered --ticker "ES=F" \
+    --windows "2026-06-01:2026-06-15,2026-06-15:2026-07-01,2026-07-01:2026-07-15,2026-07-15:2026-08-01" \
+    --interval 5m
+```
+
+Windows that fail (bad ticker, no data available, etc.) are reported
+individually and excluded from the aggregate stats — one bad window
+doesn't crash the whole run.
+
+## Parameter optimization ("training")
+
+`optimize` grid-searches a strategy's parameters, scored via multi-window
+backtests, with an explicit train/test split.
+
+**Important framing:** this is not machine learning, and nothing here
+learns from live trading. It's systematic grid search — try every
+combination of the values you give it, score each on the training
+windows, then separately check the winners against held-out test windows
+they never touched during scoring. That split exists specifically to
+catch overfitting.
+
+```
+moneymaker optimize --strategy retail_sales_spike_filtered --ticker "ES=F" \
+    --param-grid '{"stop_pct": [0.003, 0.0045, 0.006], "min_surprise_ratio": [1.5, 2.0, 3.0]}' \
+    --train-windows "2026-05-01:2026-06-01,2026-06-01:2026-07-01" \
+    --test-windows "2026-07-01:2026-08-01" \
+    --top 5
+```
+
+Always pass `--test-windows`. Without it you're only seeing train
+performance, which is exactly the number most prone to overfitting. The
+CLI flags any candidate that's profitable on train but losing on test —
+treat those with real suspicion, not just a shrug.
+
+With a realistic number of historical event days available (a monthly
+release, say), the amount of independent data to search over is small.
+Overfitting risk is real regardless of the train/test split. Treat
+optimizer output as a starting point for further live-paper validation,
+not a finished, trustworthy strategy.
+
+Both commands are also available via the API server:
+`POST /backtest-multi` and `POST /optimize` (see server section above).

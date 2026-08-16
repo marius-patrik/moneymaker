@@ -50,6 +50,40 @@ class Strategy(ABC):
         raise NotImplementedError
 
 
+def reset_session_if_new_day(ctx: StrategyContext, bar: Bar) -> None:
+    """
+    Time-boxed, daily-recurring strategies (data-release strategies, and
+    likely most others tied to a specific clock time) need their
+    per-session state reset when a new calendar day starts within a
+    single continuous backtest or live run. Without this, state left
+    over from day one — trades_taken, hard_exit_time — silently blocks
+    every subsequent day: hard_exit_time stays pinned to day one's
+    cutoff, so every later bar looks "timed out" before the strategy
+    ever gets a chance to look at it.
+
+    Call this at the very top of on_bar(), but only when no position is
+    open — if a position is somehow still open when the date rolls over
+    (e.g. a data gap prevented the time-box exit from firing exactly on
+    schedule), we deliberately do NOT reset here. Leaving the stale
+    hard_exit_time in place forces an immediate time-boxed close on the
+    next bar instead of silently carrying a supposedly-intraday position
+    across an indefinite gap.
+    """
+    if ctx.position_open:
+        return
+    session_date = ctx.extra.get("session_date")
+    if session_date == bar.time.date():
+        return
+    ctx.extra["session_date"] = bar.time.date()
+    ctx.trades_taken = 0
+    ctx.hard_exit_time = None
+    # Clear any per-session scratch state a strategy may have cached
+    # (e.g. a filtered strategy's signal_evaluated/signal_valid flags).
+    for key in list(ctx.extra.keys()):
+        if key not in ("session_date",):
+            ctx.extra.pop(key, None)
+
+
 class RetailSalesSpikeStrategy(Strategy):
     """
     Data-release fade/breakout strategy:
@@ -58,6 +92,13 @@ class RetailSalesSpikeStrategy(Strategy):
       3. Enter once price "bases" (holds a tight range for N consecutive
          bars) in the direction of the post-spike hold.
       4. Fixed % stop-loss and target, hard time-box exit.
+
+    Note: stop_price/target_price are computed from the raw signal price
+    at entry (bar.price), not the slippage-adjusted fill. At typical
+    slippage this is a small effect (the realized stop distance ends up
+    a hair tighter than configured), but it means the *stated* stop_pct
+    isn't exactly the *realized* one. Worth knowing if you're tuning
+    stop_pct against live P&L rather than just backtest output.
     """
 
     name = "retail_sales_spike"
@@ -87,6 +128,7 @@ class RetailSalesSpikeStrategy(Strategy):
         return dt.datetime.combine(bar_time.date(), self.release_time, tzinfo=bar_time.tzinfo)
 
     def on_bar(self, ctx: StrategyContext, bar: Bar) -> None:
+        reset_session_if_new_day(ctx, bar)
         release_dt = self._release_dt(bar.time)
         if ctx.hard_exit_time is None:
             ctx.hard_exit_time = dt.datetime.combine(

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from moneymaker.strategy import Bar, Strategy, StrategyContext
+from moneymaker.strategy import Bar, Strategy, StrategyContext, reset_session_if_new_day
 
 
 class FilteredDataReleaseStrategy(Strategy):
@@ -62,6 +62,7 @@ class FilteredDataReleaseStrategy(Strategy):
         return dt.datetime.combine(bar_time.date(), self.release_time, tzinfo=bar_time.tzinfo)
 
     def on_bar(self, ctx: StrategyContext, bar: Bar) -> None:
+        reset_session_if_new_day(ctx, bar)
         release_dt = self._release_dt(bar.time)
         if ctx.hard_exit_time is None:
             ctx.hard_exit_time = dt.datetime.combine(

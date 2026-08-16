@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import json
 import os
 import sys
 
@@ -15,6 +16,8 @@ from moneymaker.config import get_home
 from moneymaker.data import DataFeed
 from moneymaker.engine import Simulator
 from moneymaker.logger import TradeLogger
+from moneymaker.multiwindow import run_multi_window_backtest
+from moneymaker.optimizer import default_objective, grid_search
 from moneymaker.providers import PROVIDERS, make_provider
 from moneymaker.providers.simulated import SimulatedExecutionProvider
 from moneymaker.risk import RiskManager
@@ -192,6 +195,126 @@ def cmd_log(args):
 
 
 # --------------------------------------------------------------------------
+# multi-window backtest / optimize ("training")
+# --------------------------------------------------------------------------
+
+def _parse_windows(spec: str) -> list[tuple[str, str]]:
+    """'2026-01-01:2026-02-01,2026-03-01:2026-04-01' -> [(start,end), ...]"""
+    windows = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            raise ValueError(f"Bad window '{part}' — expected START:END, e.g. 2026-06-01:2026-07-01")
+        start, end = part.split(":", 1)
+        windows.append((start.strip(), end.strip()))
+    if not windows:
+        raise ValueError("No windows parsed from --windows")
+    return windows
+
+
+def cmd_backtest_multi(args):
+    home = get_home(args.data_dir)
+    strategies = load_strategies(home)
+    strategy_cls = strategies.get(args.strategy)
+    if not strategy_cls:
+        print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        windows = _parse_windows(args.windows)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
+    result = run_multi_window_backtest(
+        strategy_factory=strategy_cls, provider_name=args.provider, home=home,
+        ticker=args.ticker, windows=windows, interval=args.interval,
+        account_balance=args.account, risk_pct=args.risk_pct,
+    )
+    print(f"\n{'Window':<28} {'Trades':>7} {'Win%':>7} {'P&L':>12}")
+    print("-" * 58)
+    for w in result.windows:
+        if w.error:
+            print(f"{w.start} - {w.end:<10} ERROR: {w.error}")
+            continue
+        print(f"{w.start} - {w.end:<10} {w.trades:>7} {w.win_rate:>6.1%} {w.total_pnl:>12.2f}")
+    s = result.summary()
+    print("-" * 58)
+    print(f"Valid windows: {s.get('valid_windows', 0)}/{s.get('windows', 0)}   "
+          f"Total trades: {s.get('total_trades', 0)}")
+    print(f"Total P&L: {s.get('total_pnl', 0):+.2f}   "
+          f"Mean P&L/window: {s.get('mean_pnl_per_window', 0):+.2f}   "
+          f"Stdev: {s.get('pnl_stdev', 0):.2f}")
+    print(f"Windows profitable: {s.get('pct_windows_profitable', 0):.1%}   "
+          f"Overall win rate: {s.get('overall_win_rate', 0):.1%}")
+
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(home, "sessions", f"multiwindow_{args.strategy}_{ts}.json")
+    with open(out_path, "w") as f:
+        json.dump(result.to_dict(), f, indent=2, default=str)
+    print(f"\nFull results written to {out_path}")
+
+
+def cmd_optimize(args):
+    home = get_home(args.data_dir)
+    strategies = load_strategies(home)
+    strategy_cls = strategies.get(args.strategy)
+    if not strategy_cls:
+        print(f"Unknown strategy '{args.strategy}'. Run `strategies` to list options.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        param_grid = json.loads(args.param_grid)
+    except json.JSONDecodeError as e:
+        print(f"--param-grid must be valid JSON, e.g. "
+              f'\'{{"stop_pct": [0.003, 0.0045], "min_surprise_ratio": [1.5, 2.0]}}\'. Error: {e}',
+              file=sys.stderr)
+        sys.exit(1)
+    try:
+        train_windows = _parse_windows(args.train_windows)
+        test_windows = _parse_windows(args.test_windows) if args.test_windows else None
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+    combos = 1
+    for v in param_grid.values():
+        combos *= len(v)
+    print(f"Grid search: {combos} parameter combination(s), {len(train_windows)} train window(s)"
+          + (f", {len(test_windows)} test window(s)" if test_windows else
+             " (NO test windows given — results are train-only, higher overfitting risk)"))
+
+    result = grid_search(
+        strategy_cls=strategy_cls, param_grid=param_grid, provider_name=args.provider,
+        home=home, ticker=args.ticker, train_windows=train_windows, test_windows=test_windows,
+        interval=args.interval, account_balance=args.account, risk_pct=args.risk_pct,
+    )
+    ranked = result.ranked(default_objective)
+    print(f"\nTop {min(args.top, len(ranked))} of {len(ranked)} candidates (by objective score, train windows):\n")
+    for i, c in enumerate(ranked[: args.top]):
+        train_s = c.train_summary
+        print(f"#{i+1}  params={c.params}")
+        print(f"     train: trades={train_s.get('total_trades', 0)} "
+              f"win_rate={train_s.get('overall_win_rate', 0):.1%} "
+              f"pnl={train_s.get('total_pnl', 0):+.2f} "
+              f"profitable_windows={train_s.get('pct_windows_profitable', 0):.1%}")
+        if c.test_summary is not None:
+            test_s = c.test_summary
+            print(f"     test:  trades={test_s.get('total_trades', 0)} "
+                  f"win_rate={test_s.get('overall_win_rate', 0):.1%} "
+                  f"pnl={test_s.get('total_pnl', 0):+.2f} "
+                  f"profitable_windows={test_s.get('pct_windows_profitable', 0):.1%}")
+            if test_s.get("total_pnl", 0) < 0 and train_s.get("total_pnl", 0) > 0:
+                print("     ⚠ profitable on train, LOSING on test — likely overfit, treat with suspicion")
+        print()
+
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(home, "sessions", f"optimize_{args.strategy}_{ts}.json")
+    with open(out_path, "w") as f:
+        json.dump(result.to_dict(default_objective), f, indent=2, default=str)
+    print(f"Full results (all candidates) written to {out_path}")
+
+
+# --------------------------------------------------------------------------
 # server
 # --------------------------------------------------------------------------
 
@@ -284,6 +407,35 @@ def main():
     p_log = sub.add_parser("log", help="Print trade log/stats for a past session.")
     p_log.add_argument("--session", required=True, help="Session name or path to CSV")
     p_log.set_defaults(func=cmd_log)
+
+    # multi-window backtest
+    p_mw = sub.add_parser("backtest-multi", help="Run a strategy across several historical windows and aggregate results.")
+    p_mw.add_argument("--strategy", required=True)
+    p_mw.add_argument("--ticker", required=True)
+    p_mw.add_argument("--windows", required=True,
+                       help="Comma-separated START:END pairs, e.g. '2026-06-01:2026-07-01,2026-07-01:2026-08-01'")
+    p_mw.add_argument("--interval", default="5m")
+    p_mw.add_argument("--account", type=float, default=10000.0)
+    p_mw.add_argument("--risk-pct", type=float, default=0.01)
+    p_mw.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_mw.set_defaults(func=cmd_backtest_multi)
+
+    # optimize ("training")
+    p_opt = sub.add_parser("optimize", help="Grid search a strategy's parameters with a train/test window split.")
+    p_opt.add_argument("--strategy", required=True)
+    p_opt.add_argument("--ticker", required=True)
+    p_opt.add_argument("--param-grid", required=True,
+                        help='JSON dict of param -> list of candidate values, e.g. '
+                             '\'{"stop_pct": [0.003, 0.0045], "min_surprise_ratio": [1.5, 2.0]}\'')
+    p_opt.add_argument("--train-windows", required=True, help="Same format as --windows on backtest-multi")
+    p_opt.add_argument("--test-windows", default=None,
+                        help="Held-out windows never used for scoring, to check for overfitting. Strongly recommended.")
+    p_opt.add_argument("--interval", default="5m")
+    p_opt.add_argument("--account", type=float, default=10000.0)
+    p_opt.add_argument("--risk-pct", type=float, default=0.01)
+    p_opt.add_argument("--provider", default="simulated", help=f"one of {list(PROVIDERS)}")
+    p_opt.add_argument("--top", type=int, default=5, help="How many top candidates to print")
+    p_opt.set_defaults(func=cmd_optimize)
 
     p_server = sub.add_parser("server", help="Run the HTTP+JSON API server.")
     p_server.add_argument("--host", default="127.0.0.1")

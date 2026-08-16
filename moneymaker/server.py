@@ -16,6 +16,8 @@ from moneymaker.accounts import AccountManager, CredentialStore
 from moneymaker.data import DataFeed
 from moneymaker.engine import Simulator
 from moneymaker.logger import TradeLogger
+from moneymaker.multiwindow import run_multi_window_backtest
+from moneymaker.optimizer import default_objective, grid_search
 from moneymaker.providers import PROVIDERS, make_provider
 from moneymaker.providers.simulated import SimulatedExecutionProvider
 from moneymaker.risk import RiskManager
@@ -206,6 +208,42 @@ def make_handler(state: ServerState):
                 sim.stopped.set()
                 return self._json(200, {"stopped": sid})
 
+            if parts == ["backtest-multi"]:
+                try:
+                    strategies = load_strategies(state.home)
+                    strategy_cls = strategies.get(body["strategy"])
+                    if not strategy_cls:
+                        return self._json(400, {"error": f"unknown strategy {body.get('strategy')}"})
+                    windows = [tuple(w) for w in body["windows"]]  # [[start,end], ...]
+                    result = run_multi_window_backtest(
+                        strategy_factory=strategy_cls, provider_name=body.get("provider", "simulated"),
+                        home=state.home, ticker=body["ticker"], windows=windows,
+                        interval=body.get("interval", "5m"), account_balance=body.get("account", 10000.0),
+                        risk_pct=body.get("risk_pct", 0.01),
+                    )
+                    return self._json(200, result.to_dict())
+                except Exception as e:
+                    return self._json(400, {"error": str(e)})
+
+            if parts == ["optimize"]:
+                try:
+                    strategies = load_strategies(state.home)
+                    strategy_cls = strategies.get(body["strategy"])
+                    if not strategy_cls:
+                        return self._json(400, {"error": f"unknown strategy {body.get('strategy')}"})
+                    train_windows = [tuple(w) for w in body["train_windows"]]
+                    test_windows = [tuple(w) for w in body["test_windows"]] if body.get("test_windows") else None
+                    result = grid_search(
+                        strategy_cls=strategy_cls, param_grid=body["param_grid"],
+                        provider_name=body.get("provider", "simulated"), home=state.home,
+                        ticker=body["ticker"], train_windows=train_windows, test_windows=test_windows,
+                        interval=body.get("interval", "5m"), account_balance=body.get("account", 10000.0),
+                        risk_pct=body.get("risk_pct", 0.01),
+                    )
+                    return self._json(200, result.to_dict(default_objective))
+                except Exception as e:
+                    return self._json(400, {"error": str(e)})
+
             return self._json(404, {"error": "not found"})
 
     return Handler
@@ -227,6 +265,8 @@ def run_server(home: str, host: str = "127.0.0.1", port: int = 8787) -> None:
     print("  GET  /live/<id>/status        POST /live/<id>/stop")
     print("  GET  /live/list")
     print("  GET  /sessions                GET /sessions/<filename>")
+    print("  POST /backtest-multi  {strategy, ticker, windows:[[start,end],...], interval?, provider?, account?, risk_pct?}")
+    print("  POST /optimize        {strategy, ticker, param_grid:{...}, train_windows:[[s,e],...], test_windows?, interval?, provider?, account?, risk_pct?}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
