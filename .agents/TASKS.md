@@ -64,3 +64,29 @@ Design approved (2026-08-16):
 - [x] Update README project layout
 - [x] Update CONTEXT.md, PLAN.md, TASKS.md
 - [x] Commit + push
+
+## Phase 5: Profitable strategy + engine overhaul [complete — 2026-08-16]
+
+- [x] Diagnose intraday R:R problem (bar-level stop noise on 5m bars)
+- [x] Implement trend_momentum (daily MA crossover); validate on GC=F
+- [x] Hill-climb params via evolve CLI; confirm 100% 4-year walk-forward profitability
+- [x] P002: Bar.volume field; Simulator passes volume from yfinance
+- [x] P003: feed_bar(deduplicate=True) for live mode; Simulator tracks _last_bar_time
+- [x] P006: run_backtest force-closes dangling position at end of data
+- [x] Fix target_price=None crash in ENTER log line
+- [x] P004: DataFeed cache TTL (re-fetch current-window data after 1h)
+- [x] CLI: --param on backtest-multi
+- [x] Implement vwap_reversion (full; was stub); 4 FORKS
+- [x] Implement momentum_continuation (full; was stub); trailing stop; 4 FORKS
+- [x] Implement opening_range_breakout (full; R:R bug fixed); 3 FORKS
+- [x] Add gc_evolved FORK to trend_momentum.FORKS
+- [x] Update CONTEXT.md, BACKLOG.md, TASKS.md
+- [x] Commit (88b08a1)
+- [ ] Push to GitHub (pending user confirmation)
+
+## Remaining actionable backlog
+
+- [ ] Run fork-eval on vwap_reversion (SPY/ES=F 5m) to validate mean-reversion hypothesis
+- [ ] Run trend_momentum on CL=F and ZN=F — additional markets for profitable setup
+- [ ] P009: --walk-forward N flag on optimizer (auto-generate N windows over date range)
+- [ ] CI: GitHub Actions workflow (tests pass locally; no CI pipeline yet)
