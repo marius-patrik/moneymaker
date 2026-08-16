@@ -25,12 +25,12 @@ export default defineConfig({
         target: process.env.MONEYMAKER_API || "http://127.0.0.1:8787",
       },
     },
+    // Static assets (the favicon) are copied verbatim from public/.
+    publicDir: { name: "public" },
   },
   output: {
     distPath: {
       root: "dist",
     },
   },
-  // Static assets (favicon) are copied verbatim from public/.
-  server: { publicDir: { name: "public" } },
 });
