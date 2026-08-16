@@ -31,4 +31,6 @@ export default defineConfig({
       root: "dist",
     },
   },
+  // Static assets (favicon) are copied verbatim from public/.
+  server: { publicDir: { name: "public" } },
 });

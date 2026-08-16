@@ -57,6 +57,7 @@ class Simulator:
                 direction=self.ctx.direction,
                 size=size,
                 account_id=self.account_id,
+                ticker=self.ticker,
             )
             target_str = f"{self.ctx.target_price:.2f}" if self.ctx.target_price is not None else "none"
             print(f"[{bar.time}] ENTER {self.ctx.direction.upper()} @ {result.fill_price:.2f} "

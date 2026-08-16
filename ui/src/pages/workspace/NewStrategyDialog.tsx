@@ -39,7 +39,7 @@ export function NewStrategyDialog({
             <AnimatedIcon icon={Plus} motionType="pop" className="h-3.5 w-3.5" />
           </button>
         ) : (
-          <Button size="sm">
+          <Button size="sm" className="w-full">
             <AnimatedIcon icon={Plus} motionType="pop" className="h-4 w-4" />
             New system
           </Button>

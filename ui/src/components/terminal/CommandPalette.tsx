@@ -20,8 +20,8 @@ interface Command {
  * from the keyboard the way a terminal is expected to be.
  */
 export function CommandPalette({
-  open, onClose, onOpenSettings,
-}: { open: boolean; onClose: () => void; onOpenSettings: () => void }) {
+  open, onClose,
+}: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -40,13 +40,13 @@ export function CommandPalette({
       id: `nav:${n.to}`, label: n.label, group: "Go to",
       run: () => { navigate(n.to); onClose(); },
     })),
-    { id: "settings", label: "Settings", hint: "⌘,", group: "Go to",
-      run: () => { onOpenSettings(); onClose(); } },
+    { id: "settings", label: "Settings", group: "Go to",
+      run: () => { navigate("/settings"); onClose(); } },
     ...strategies.map((s) => ({
       id: `strat:${s.name}`, label: s.name, hint: s.source, group: "Strategies",
       run: () => { navigate("/workspace"); onClose(); },
     })),
-  ], [strategies, navigate, onClose, onOpenSettings]);
+  ], [strategies, navigate, onClose]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();

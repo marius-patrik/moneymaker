@@ -252,3 +252,13 @@ and full trade tables (instrument, side, open/close, size, prices, reason).
 
 useResource replaces the `.catch(() => {})` pattern that rendered a failed
 request as an empty list — which is why accounts sometimes showed "none".
+
+### Sections split by subject (DONE 2026-08-16)
+Trade is instrument-first (watchlist + chart + ticket); Strategies is
+system-first (systems sidebar, Backtest and Lab tabs, name-as-picker).
+Portfolio shows open positions and trade history with an account filter
+(GET /api/positions). Account administration moved to Settings, which is now
+a page rather than a modal.
+
+Trade records gained a `ticker` field — the log did not record what was
+traded, so every instrument column was empty.

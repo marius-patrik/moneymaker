@@ -3,7 +3,6 @@ import {
   KeyRound, Trash2, Loader2, Server, FolderOpen, Sun, Moon, Monitor,
   Database, Newspaper, Landmark, Check,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -11,6 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { AnimatedIcon, MotionHost } from "@/components/ui/animated-icon";
 import { useToast } from "@/components/ui/toast";
+import { Panel, DataTable } from "@/components/terminal/Panel";
+import { SkeletonRows, ErrorState, EmptyState } from "@/components/terminal/States";
+import { useResource } from "@/lib/useResource";
+import { fmtDollar } from "@/lib/utils";
 import { useTheme, type Theme } from "@/lib/useTheme";
 import { api, type AppConfig, type ProviderGroups, type Provider } from "@/lib/api";
 
@@ -43,7 +46,7 @@ function ProviderGroup({
   );
 }
 
-export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function Settings() {
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -58,11 +61,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     api.credentials.list().then((r) => setCreds(r.credentials ?? {})).catch(() => {});
 
   useEffect(() => {
-    if (!open) return;
     api.config.get().then((c) => { setConfig(c); setHomeInput(c.home); }).catch(() => {});
     api.providers.list().then(setGroups).catch(() => {});
     loadCreds();
-  }, [open]);
+  }, []);
 
   async function saveCred() {
     setSaving(true);
@@ -104,19 +106,25 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Appearance, data location, providers and credentials.</DialogDescription>
-        </DialogHeader>
+    <div className="mx-auto max-w-3xl space-y-3 p-3 sm:p-4">
+      <div>
+        <h1 className="text-[15px] font-semibold tracking-tight">Settings</h1>
+        <p className="text-xs text-muted-foreground">
+          Appearance, data location, accounts, providers and credentials.
+        </p>
+      </div>
 
-        <Tabs defaultValue="general" className="pt-1">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="general">
+          <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="accounts">Accounts</TabsTrigger>
             <TabsTrigger value="providers">Providers</TabsTrigger>
             <TabsTrigger value="credentials">Credentials</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="accounts" className="pt-4">
+            <AccountsSettings />
+          </TabsContent>
 
           {/* ---------------- general ---------------- */}
           <TabsContent value="general" className="space-y-3 pt-4">
@@ -252,7 +260,118 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </div>
           </TabsContent>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+    </div>
+  );
+}
+
+/** Account administration — creating, funding and removing paper accounts. */
+function AccountsSettings() {
+  const { toast } = useToast();
+  const accounts = useResource(() => api.accounts.list(), []);
+  const [form, setForm] = useState({ name: "", balance: "10000" });
+  const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function create() {
+    setBusy(true);
+    try {
+      await api.accounts.create({ name: form.name, starting_balance: Number(form.balance) });
+      toast(`Created ${form.name}`, "success");
+      setForm({ name: "", balance: "10000" });
+      accounts.reload();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Create failed", "error");
+    }
+    setBusy(false);
+  }
+
+  async function remove(id: string, name: string) {
+    setDeleting(id);
+    try {
+      await api.accounts.remove(id);
+      toast(`Deleted ${name}`, "success");
+      accounts.reload();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Delete failed", "error");
+    }
+    setDeleting(null);
+  }
+
+  async function prune() {
+    try {
+      const dry = await api.accounts.prune("mw_", true);
+      if (dry.matched === 0) return toast("No scratch accounts to prune.", "info");
+      if (window.confirm(`Delete ${dry.matched} scratch account(s) from older backtests?`)) {
+        const r = await api.accounts.prune("mw_", false);
+        toast(`Deleted ${r.deleted} scratch account(s)`, "success");
+        accounts.reload();
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Prune failed", "error");
+    }
+  }
+
+  const list = accounts.data?.accounts ?? [];
+  const total = list.reduce((s, a) => s + (a.balance ?? 0), 0);
+
+  return (
+    <div className="space-y-3">
+      <Panel dense title={`${list.length} accounts`}
+             actions={<span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+               {fmtDollar(total)} combined</span>}>
+        {accounts.error ? <ErrorState message={accounts.error} onRetry={accounts.reload} />
+          : !accounts.settled ? <SkeletonRows rows={3} cols={3} />
+          : list.length === 0 ? <EmptyState title="No accounts yet" />
+          : (
+            <DataTable head={<><th>Name</th><th>Provider</th>
+                              <th className="!text-right">Balance</th><th className="w-8" /></>}>
+              {list.map((a) => (
+                <tr key={a.account_id} className="group">
+                  <td>
+                    <div className="font-medium">{a.name}</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">{a.account_id}</div>
+                  </td>
+                  <td className="text-muted-foreground">{a.provider}</td>
+                  <td className="text-right font-mono tabular-nums">{fmtDollar(a.balance)}</td>
+                  <td>
+                    <button onClick={() => remove(a.account_id, a.name)}
+                            disabled={deleting === a.account_id}
+                            aria-label={`Delete ${a.name}`}
+                            className="rounded p-1 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100">
+                      {deleting === a.account_id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Trash2 className="h-3.5 w-3.5 text-destructive" />}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+      </Panel>
+
+      <Panel title="Add account">
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Name" value={form.name} placeholder="paper-1"
+                   onValueChange={(v) => setForm((f) => ({ ...f, name: v }))} />
+            <Field label="Starting balance (USD)" type="number" value={form.balance}
+                   onValueChange={(v) => setForm((f) => ({ ...f, balance: v }))} />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={create} disabled={busy || !form.name}>
+              {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Create account
+            </Button>
+            <Button size="sm" variant="outline" onClick={prune}>
+              Prune scratch accounts
+            </Button>
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Older multi-window backtests left one <code className="font-mono">mw_*</code> account per
+            window behind. Pruning clears them; current runs no longer create any.
+          </p>
+        </div>
+      </Panel>
+    </div>
   );
 }

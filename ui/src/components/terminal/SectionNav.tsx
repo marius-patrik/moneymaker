@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, CandlestickChart, Wallet, Settings } from "lucide-react";
+import { LayoutDashboard, CandlestickChart, Wallet, Settings, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedIcon, type IconMotion } from "@/components/ui/animated-icon";
 
@@ -13,10 +13,14 @@ import { AnimatedIcon, type IconMotion } from "@/components/ui/animated-icon";
 export const SECTIONS: {
   to: string; icon: React.ElementType; label: string; motion: IconMotion;
 }[] = [
-  { to: "/",          icon: LayoutDashboard,  label: "Overview",  motion: "lift" },
-  { to: "/workspace", icon: CandlestickChart, label: "Workspace", motion: "draw" },
-  { to: "/portfolio", icon: Wallet,           label: "Portfolio", motion: "lift" },
+  { to: "/",           icon: LayoutDashboard,  label: "Overview",   motion: "lift" },
+  { to: "/trade",      icon: CandlestickChart, label: "Trade",      motion: "draw" },
+  { to: "/strategies", icon: Zap,              label: "Strategies", motion: "pop" },
+  { to: "/portfolio",  icon: Wallet,           label: "Portfolio",  motion: "lift" },
 ];
+
+/** Settings is a destination too, just not a primary one. */
+export const SETTINGS_ROUTE = "/settings";
 
 /** Segmented switcher in the context bar (desktop). */
 export function SectionNav() {
@@ -44,7 +48,7 @@ export function SectionNav() {
 }
 
 /** Bottom tab bar (mobile) — thumb-reachable, replaces the drawer. */
-export function BottomNav({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function BottomNav() {
   return (
     <nav className="glass z-40 flex h-14 shrink-0 items-stretch border-t md:hidden">
       {SECTIONS.map(({ to, icon, label, motion }) => (
@@ -66,13 +70,18 @@ export function BottomNav({ onOpenSettings }: { onOpenSettings: () => void }) {
           )}
         </NavLink>
       ))}
-      <button onClick={onOpenSettings}
-              aria-label="Settings"
-              className="flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium text-muted-foreground">
-        <AnimatedIcon icon={Settings} motionType="wiggle" className="h-[18px] w-[18px]" />
-        Settings
-        <span className="h-0.5 w-6" />
-      </button>
+      <NavLink to={SETTINGS_ROUTE} className="flex-1">
+        {({ isActive }) => (
+          <span className={cn(
+            "flex h-full flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors",
+            isActive ? "text-foreground" : "text-muted-foreground")}>
+            <AnimatedIcon icon={Settings} motionType="wiggle" className="h-[18px] w-[18px]" />
+            Settings
+            <span className={cn("h-0.5 w-6 rounded-full transition-colors",
+              isActive ? "bg-primary" : "bg-transparent")} />
+          </span>
+        )}
+      </NavLink>
     </nav>
   );
 }

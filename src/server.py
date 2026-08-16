@@ -200,6 +200,16 @@ class OptimizeBody(BaseModel):
 # Factory
 # ---------------------------------------------------------------------------
 
+def _num(v: Optional[str]) -> Optional[float]:
+    """Parse a CSV numeric cell, tolerating blanks and junk."""
+    if v in (None, ""):
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        return None
+
+
 def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
     """
     Build the app. `ui_dist` overrides where the built SPA is found, which
@@ -878,6 +888,57 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
                 points.append({"i": i + 1, "t": when[:19], "equity": round(running, 2)})
         return {"points": points, "trades": len(trades),
                 "final": round(running, 2)}
+
+    @api.get("/positions")
+    def get_positions(account_id: Optional[str] = None, limit: int = 500):
+        """
+        Every trade this account has taken, open and closed.
+
+        Trade logs carry the account they ran against, so the portfolio can
+        be scoped to one account or shown whole. A row with no exit is still
+        open.
+        """
+        sess_dir = pathlib.Path(state.home) / "sessions"
+        open_rows: list[dict] = []
+        closed_rows: list[dict] = []
+
+        if sess_dir.is_dir():
+            files = sorted(sess_dir.glob("*.csv"),
+                           key=lambda p: p.stat().st_mtime, reverse=True)
+            for path in files:
+                try:
+                    with open(path) as f:
+                        rows = list(csv.DictReader(f))
+                except OSError:
+                    continue
+                for r in rows:
+                    if account_id and r.get("account_id") != account_id:
+                        continue
+                    entry = {
+                        "run": path.stem,
+                        "ticker": r.get("ticker") or "",
+                        "direction": r.get("direction") or "",
+                        "size": _num(r.get("size")),
+                        "entry_time": r.get("entry_time") or "",
+                        "entry_price": _num(r.get("entry_price")),
+                        "exit_time": r.get("exit_time") or "",
+                        "exit_price": _num(r.get("exit_price")),
+                        "exit_reason": r.get("exit_reason") or "",
+                        "pnl": _num(r.get("pnl")),
+                        "pnl_pct": r.get("pnl_pct") or "",
+                        "account_id": r.get("account_id") or "",
+                    }
+                    (closed_rows if r.get("exit_time") else open_rows).append(entry)
+
+        closed_rows.sort(key=lambda t: t["entry_time"], reverse=True)
+        realised = sum(t["pnl"] or 0.0 for t in closed_rows)
+        return {
+            "open": open_rows[:limit],
+            "closed": closed_rows[:limit],
+            "open_count": len(open_rows),
+            "closed_count": len(closed_rows),
+            "realised_pnl": round(realised, 2),
+        }
 
     @api.get("/pnl-distribution")
     def get_pnl_distribution(buckets: int = 21):

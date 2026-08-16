@@ -16,6 +16,7 @@ class Trade:
     direction: str
     size: float
     account_id: str = ""
+    ticker: str = ""
     exit_time: Optional[dt.datetime] = None
     exit_price: Optional[float] = None
     exit_reason: Optional[str] = None
@@ -37,6 +38,7 @@ class Trade:
             "direction": self.direction,
             "size": self.size,
             "account_id": self.account_id,
+            "ticker": self.ticker,
             "exit_time": self.exit_time.isoformat() if self.exit_time else None,
             "exit_price": self.exit_price,
             "exit_reason": self.exit_reason,
@@ -59,12 +61,12 @@ class TradeLogger:
             writer = csv.writer(f)
             writer.writerow([
                 "entry_time", "entry_price", "direction", "size", "account_id",
-                "exit_time", "exit_price", "exit_reason", "pnl", "pnl_pct",
+                "ticker", "exit_time", "exit_price", "exit_reason", "pnl", "pnl_pct",
             ])
             for t in self.trades:
                 writer.writerow([
                     t.entry_time, f"{t.entry_price:.4f}", t.direction, f"{t.size:.4f}", t.account_id,
-                    t.exit_time, f"{t.exit_price:.4f}" if t.exit_price else "",
+                    t.ticker, t.exit_time, f"{t.exit_price:.4f}" if t.exit_price else "",
                     t.exit_reason, f"{t.pnl:.2f}" if t.pnl is not None else "",
                     f"{t.pnl_pct:.4%}" if t.pnl_pct is not None else "",
                 ])

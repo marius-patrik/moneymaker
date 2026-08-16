@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
-import { SECTIONS } from "@/components/terminal/SectionNav";
+import { SECTIONS, SETTINGS_ROUTE } from "@/components/terminal/SectionNav";
 
 /**
  * Navigation rail.
@@ -14,7 +14,7 @@ import { SECTIONS } from "@/components/terminal/SectionNav";
  * would rather have. Icons stay visible in both states — the rail never goes
  * blank.
  */
-export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function Sidebar() {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -56,25 +56,24 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings: () => void }) {
       </nav>
 
       <div className="p-2">
-        <button
-          onClick={onOpenSettings}
-          title="Settings"
-          aria-label="Settings"
-          className="flex h-9 w-full items-center gap-3 overflow-hidden rounded-lg px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <AnimatedIcon icon={Settings} motionType="wiggle" className="h-4 w-4" />
-          <AnimatePresence initial={false}>
-            {hovered && (
-              <motion.span
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                transition={{ duration: 0.1 }}
-                className="whitespace-nowrap"
-              >
-                Settings
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </button>
+        <NavLink to={SETTINGS_ROUTE} title="Settings">
+          {({ isActive }) => (
+            <span className={cn(
+              "flex h-9 items-center gap-3 overflow-hidden rounded-lg px-2.5 text-[13px] font-medium transition-colors",
+              isActive ? "bg-primary text-primary-foreground"
+                       : "text-muted-foreground hover:bg-accent hover:text-accent-foreground")}>
+              <AnimatedIcon icon={Settings} motionType="wiggle" className="h-4 w-4" />
+              <AnimatePresence initial={false}>
+                {hovered && (
+                  <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                               transition={{ duration: 0.1 }} className="whitespace-nowrap">
+                    Settings
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </span>
+          )}
+        </NavLink>
       </div>
     </motion.aside>
   );

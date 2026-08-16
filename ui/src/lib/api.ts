@@ -115,6 +115,29 @@ export interface PnlDistribution {
   gross_loss: number;
 }
 
+export interface PositionRow {
+  run: string;
+  ticker: string;
+  direction: string;
+  size: number | null;
+  entry_time: string;
+  entry_price: number | null;
+  exit_time: string;
+  exit_price: number | null;
+  exit_reason: string;
+  pnl: number | null;
+  pnl_pct: string;
+  account_id: string;
+}
+
+export interface PositionsResponse {
+  open: PositionRow[];
+  closed: PositionRow[];
+  open_count: number;
+  closed_count: number;
+  realised_pnl: number;
+}
+
 export interface Stats {
   sessions: number;
   accounts: number;
@@ -315,6 +338,11 @@ export const api = {
     quote: (ticker: string) =>
       get<{ ticker: string; price: number; time: string }>(
         `/quote/${encodeURIComponent(ticker)}`),
+  },
+  positions: {
+    list: (accountId?: string) =>
+      get<PositionsResponse>(
+        `/positions${accountId ? `?account_id=${encodeURIComponent(accountId)}` : ""}`),
   },
   jobs: {
     list: () => get<{ jobs: Job[] }>("/jobs"),

@@ -7,17 +7,18 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/terminal/SectionNav";
 import { TopBar } from "@/components/terminal/TopBar";
 import { CommandPalette } from "@/components/terminal/CommandPalette";
-import { SettingsDialog } from "@/components/SettingsDialog";
 import { Dashboard } from "@/pages/Dashboard";
-import { Workspace } from "@/pages/Workspace";
-import { Accounts } from "@/pages/Accounts";
+import { Trade } from "@/pages/Trade";
+import { Strategies } from "@/pages/Strategies";
+import { Portfolio } from "@/pages/Portfolio";
+import { Settings } from "@/pages/Settings";
 
 function PageTransition({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={{ duration: 0.12 }}
-      className="h-full min-h-0"
+      className="h-full min-h-0 overflow-y-auto"
     >
       {children}
     </motion.div>
@@ -26,14 +27,13 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 
 export function App() {
   const location = useLocation();
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === "k") { e.preventDefault(); setPaletteOpen((v) => !v); }
-      else if (e.key === ",") { e.preventDefault(); setSettingsOpen(true); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault(); setPaletteOpen((v) => !v);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -41,8 +41,10 @@ export function App() {
 
   const routes: [string, React.ReactNode][] = [
     ["/", <Dashboard />],
-    ["/workspace", <Workspace />],
-    ["/portfolio", <Accounts />],
+    ["/trade", <Trade />],
+    ["/strategies", <Strategies />],
+    ["/portfolio", <Portfolio />],
+    ["/settings", <Settings />],
   ];
 
   return (
@@ -52,7 +54,7 @@ export function App() {
           <TopBar onOpenPalette={() => setPaletteOpen(true)} />
 
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+            <Sidebar />
             <main className="min-w-0 flex-1 overflow-hidden">
               <AnimatePresence mode="wait">
                 <Routes location={location} key={location.pathname}>
@@ -65,12 +67,10 @@ export function App() {
             </main>
           </div>
 
-          {/* Mobile navigation lives at the bottom, within thumb reach. */}
-          <BottomNav onOpenSettings={() => setSettingsOpen(true)} />
+          {/* Mobile navigation sits within thumb reach. */}
+          <BottomNav />
 
-          <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)}
-                          onOpenSettings={() => setSettingsOpen(true)} />
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         </div>
       </TooltipProvider>
     </ToastProvider>
