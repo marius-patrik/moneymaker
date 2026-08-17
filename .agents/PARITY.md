@@ -18,14 +18,17 @@ interaction model is theirs rather than an imitation.
 | Timeframes 5m / 15m / 1h / 1d / 1wk | ✅ |
 | Theme-aware, redraws on theme change | ✅ |
 | Drawing tools (trendlines, fib) | ❌ not built |
-| Indicator overlays (MA, RSI, MACD) | ❌ not built |
+| Indicator overlays (SMA, EMA, VWAP, RSI) | ✅ added after this audit |
 | Price alerts | ❌ not built |
 | Compare instruments on one chart | ❌ not built |
 
-The four gaps are analysis conveniences. None of them block the product's
-purpose, which is automated systems rather than discretionary charting — but
-indicator overlays are the most defensible next addition, since strategies
-already compute MAs and VWAP that the chart cannot show.
+Indicator overlays were the gap worth closing, and are done: SMA, EMA, VWAP
+and RSI, computed server-side from the same candles the chart draws, so the
+overlay and the strategies read one implementation rather than two that
+drift. Selection persists per browser.
+
+The remaining three are discretionary-charting conveniences. None blocks the
+product's purpose, which is automated systems.
 
 ## Trading (Trading212)
 
@@ -47,6 +50,14 @@ already compute MAs and VWAP that the chart cannot show.
 Order types are the real gap. A strategy sets its own stops internally, so
 this only limits manual trading — which the product deliberately treats as
 secondary.
+
+## Added after this audit
+
+- **Indicator overlays.** `/api/indicators` lists what can be drawn;
+  `/api/indicator/<kind>/<ticker>` returns a series aligned to the chart's
+  candles. SMA and EMA seed on the first full window; VWAP falls back to an
+  unweighted mean when the feed reports no volume, which futures often do,
+  so the line still means something. 12 tests.
 
 ## Fixed during this audit
 

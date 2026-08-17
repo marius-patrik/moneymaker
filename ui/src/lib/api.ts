@@ -93,6 +93,21 @@ export interface Instrument {
   exchange: string;
 }
 
+export interface IndicatorMeta {
+  kind: string;
+  label: string;
+  pane: "price" | "lower";
+  params: Record<string, number>;
+}
+
+export interface IndicatorSeries {
+  kind: string;
+  label: string;
+  pane: "price" | "lower";
+  period: number;
+  points: { time: number; value: number }[];
+}
+
 export interface Candle {
   /** UNIX seconds — what lightweight-charts indexes on. */
   time: number;
@@ -381,6 +396,12 @@ export const api = {
       account_id?: string; closing?: boolean; reference_price?: number;
     }) => post<{ account_id: string; ticker: string; direction: string;
                  size: number; fill_price: number; balance: number }>("/orders", body),
+    indicators: () => get<{ indicators: IndicatorMeta[] }>("/indicators"),
+    indicator: (kind: string, ticker: string, period: number,
+                interval: string, days: number) =>
+      get<IndicatorSeries>(
+        `/indicator/${kind}/${encodeURIComponent(ticker)}` +
+        `?period=${period}&interval=${interval}&days=${days}`),
     search: (q: string) =>
       get<{ results: Instrument[] }>(`/search?q=${encodeURIComponent(q)}`),
     history: (ticker: string, interval = "1h", days = 30) =>

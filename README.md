@@ -341,6 +341,8 @@ GET  /api/equity               cumulative P&L across every session
 POST /api/orders          {ticker, direction, size, account_id?}  — manual order
 GET  /api/quote/<ticker>       last price
 GET  /api/search?q=           instrument search
+GET  /api/indicators          overlays the chart can draw
+GET  /api/indicator/<k>/<t>   indicator series aligned to the candles
 GET  /api/pnl-distribution    trade-P&L histogram + win/loss composition
 GET  /api/history/<ticker>     OHLCV candles for the chart
 GET  /api/positions            open positions + trade history (account-scoped)

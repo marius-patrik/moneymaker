@@ -12,11 +12,13 @@ import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/lib/useResource";
 import { PriceChart, OhlcReadout, type ChartKind } from "@/components/terminal/PriceChart";
 import { PositionsPanel } from "@/components/terminal/PositionsPanel";
-import { api, type Candle } from "@/lib/api";
+import { IndicatorPicker, type ActiveIndicator } from "@/components/terminal/IndicatorPicker";
+import { api, type Candle, type IndicatorSeries } from "@/lib/api";
 import { cn, fmt, fmtDollar, fmtPct } from "@/lib/utils";
 
 const WATCH_KEY = "mm.watchlist";
 const TICKER_KEY = "mm.ticker";
+const IND_KEY = "mm.indicators";
 const DEFAULT_WATCH = ["GC=F", "ES=F", "NQ=F", "CL=F", "SPY"];
 
 /** Interval paired with a lookback that yields a useful number of bars. */
@@ -78,6 +80,10 @@ export function Trade() {
   const [accountId, setAccountId] = useState("");
   const [placing, setPlacing] = useState<"long" | "short" | null>(null);
   const [posNonce, setPosNonce] = useState(0);
+  const [indicators, setIndicators] = useState<ActiveIndicator[]>(() => {
+    try { return JSON.parse(localStorage.getItem(IND_KEY) ?? "[]"); } catch { return []; }
+  });
+  const [series, setSeries] = useState<IndicatorSeries[]>([]);
   const [tf, setTf] = useState<{ interval: string; days: number; label: string }>(
     TIMEFRAMES[2]);
   const [kind, setKind] = useState<ChartKind>("candles");
@@ -89,6 +95,18 @@ export function Trade() {
 
   useEffect(() => { localStorage.setItem(WATCH_KEY, JSON.stringify(watch)); }, [watch]);
   useEffect(() => { localStorage.setItem(TICKER_KEY, ticker); }, [ticker]);
+  useEffect(() => { localStorage.setItem(IND_KEY, JSON.stringify(indicators)); }, [indicators]);
+
+  // Indicators follow the chart: same instrument, same timeframe.
+  useEffect(() => {
+    if (indicators.length === 0) { setSeries([]); return; }
+    let alive = true;
+    Promise.all(indicators.map((i) =>
+      api.orders.indicator(i.kind, ticker, i.period, tf.interval, tf.days)
+        .catch(() => null)))
+      .then((rs) => { if (alive) setSeries(rs.filter(Boolean) as IndicatorSeries[]); });
+    return () => { alive = false; };
+  }, [indicators, ticker, tf.interval, tf.days]);
   useEffect(() => {
     const list = accounts.data?.accounts ?? [];
     if (!accountId && list[0]) setAccountId(list[0].account_id);
@@ -152,6 +170,7 @@ export function Trade() {
           <Panel title={ticker}
                  actions={
                    <div className="flex items-center gap-1">
+                     <IndicatorPicker active={indicators} onChange={setIndicators} />
                      <div className="flex rounded-md bg-muted/70 p-0.5">
                        {TIMEFRAMES.map((t) => (
                          <button key={t.label} onClick={() => setTf(t)}
@@ -189,7 +208,8 @@ export function Trade() {
                 : !hist.settled ? <div className="flex h-[380px] items-center justify-center">
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
                 : d && d.candles.length > 1
-                  ? <PriceChart candles={d.candles} kind={kind} height={380} onHover={setHover} />
+                  ? <PriceChart candles={d.candles} kind={kind} height={380}
+                                onHover={setHover} overlays={series} />
                   : <div className="h-[380px]"><EmptyState title="No price data"
                       hint={`Nothing returned for ${ticker} at ${tf.label}.`} /></div>}
             </div>

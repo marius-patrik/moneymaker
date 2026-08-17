@@ -889,6 +889,48 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             "low": min(b["low"] for b in candles),
         }
 
+    @api.get("/indicators")
+    def list_indicators():
+        """What the chart can overlay, and each one's default."""
+        from src.indicators import CATALOG
+        return {"indicators": [
+            {"kind": k, **v} for k, v in CATALOG.items()
+        ]}
+
+    @api.get("/indicator/{kind}/{ticker:path}")
+    def get_indicator(kind: str, ticker: str, period: int = 20,
+                      interval: str = "1h", days: int = 30,
+                      data_provider: str = "yfinance"):
+        """
+        An indicator series aligned to the same candles the chart draws.
+
+        Computed here rather than in the browser so the overlay and the
+        strategies read one implementation instead of two that drift.
+        """
+        from src.indicators import CATALOG, compute
+        if kind not in CATALOG:
+            raise HTTPException(400, f"unknown indicator: {kind}")
+
+        bars = get_history(ticker, interval=interval, days=days,
+                           data_provider=data_provider)["candles"]
+        try:
+            values = compute(kind, bars, period)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+        return {
+            "kind": kind,
+            "label": CATALOG[kind]["label"],
+            "pane": CATALOG[kind]["pane"],
+            "period": period,
+            # Gaps are dropped rather than sent as nulls: the chart wants a
+            # series that starts where the data does.
+            "points": [
+                {"time": bars[i]["time"], "value": round(v, 6)}
+                for i, v in enumerate(values) if v is not None
+            ],
+        }
+
     @api.post("/orders")
     def place_order(body: ManualOrderBody):
         """

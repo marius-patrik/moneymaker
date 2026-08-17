@@ -275,3 +275,10 @@ Charts are lightweight-charts (TradingView's own library): candles or line,
 Strategies list and header now show realised P&L, win rate, profit factor,
 trades and runs per system (GET /api/strategies/stats). Provenance badges
 removed — every strategy is the user's to edit, and any can be duplicated.
+
+### Indicator overlays (DONE 2026-08-17)
+SMA, EMA, VWAP and RSI in src/indicators.py, exposed via /api/indicators and
+/api/indicator/<kind>/<ticker>. Computed server-side deliberately: strategies
+already reason about these, and one implementation cannot drift from another.
+VWAP falls back to an unweighted mean when the feed reports no volume, which
+yfinance futures do. 12 tests.

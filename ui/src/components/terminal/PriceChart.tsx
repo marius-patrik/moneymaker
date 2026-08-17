@@ -5,7 +5,7 @@ import {
 } from "lightweight-charts";
 import { useTheme } from "@/lib/useTheme";
 import { fmt } from "@/lib/utils";
-import type { Candle } from "@/lib/api";
+import type { Candle, IndicatorSeries } from "@/lib/api";
 
 export type ChartKind = "candles" | "line";
 
@@ -29,14 +29,20 @@ interface Hover {
  * and a price scale you can stretch. Candles carry each period's range and
  * direction, which a line drops.
  */
+/** Distinct, theme-neutral colours so overlays stay apart from the candles. */
+const OVERLAY_COLORS = ["#f59e0b", "#38bdf8", "#a78bfa", "#f472b6"];
+
 export function PriceChart({
-  candles, kind = "candles", height = 380, onHover,
+  candles, kind = "candles", height = 380, onHover, overlays = [],
 }: {
   candles: Candle[];
   kind?: ChartKind;
   height?: number;
   onHover?: (h: Hover | null) => void;
+  /** Indicator series drawn over the price pane. */
+  overlays?: IndicatorSeries[];
 }) {
+  const overlayRefs = useRef<ISeriesApi<"Line">[]>([]);
   const holder = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const priceRef = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Line"> | null>(null);
@@ -100,8 +106,35 @@ export function PriceChart({
     });
     ro.observe(holder.current);
 
-    return () => { ro.disconnect(); chart.remove(); chartRef.current = null; };
+    return () => {
+      ro.disconnect(); chart.remove();
+      chartRef.current = null; overlayRefs.current = [];
+    };
   }, [kind, height, theme]);
+
+  // Overlays are rebuilt wholesale: the set changes rarely and reconciling
+  // series identity is more machinery than the saving is worth.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    for (const s of overlayRefs.current) {
+      try { chart.removeSeries(s); } catch { /* chart already torn down */ }
+    }
+    overlayRefs.current = [];
+
+    overlays.filter((o) => o.pane === "price").forEach((o, i) => {
+      const series = chart.addSeries(LineSeries, {
+        color: OVERLAY_COLORS[i % OVERLAY_COLORS.length],
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      series.setData(o.points.map((p) => ({ time: p.time as Time, value: p.value })));
+      overlayRefs.current.push(series);
+    });
+  }, [overlays, candles, kind, theme]);
 
   // Feed data.
   useEffect(() => {
