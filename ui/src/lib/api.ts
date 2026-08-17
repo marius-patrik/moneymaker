@@ -91,7 +91,46 @@ export interface Instrument {
   name: string;
   type: string;
   exchange: string;
+  /** Set when the symbol is a substitute — e.g. futures for spot metals. */
+  note?: string;
 }
+
+export interface PendingOrder {
+  id: string;
+  account_id: string;
+  ticker: string;
+  direction: string;
+  size: number;
+  type: string;
+  trigger_price: number;
+  limit_price: number | null;
+  position_id: string | null;
+  status: string;
+  placed_at: string;
+}
+
+export interface OrderMonitor {
+  running: boolean;
+  interval_seconds: number;
+  last_sweep: string | null;
+  error: string | null;
+  working_orders: number;
+}
+
+export interface NewsItem {
+  title: string;
+  publisher: string;
+  link: string;
+  published: string;
+  tickers: string[];
+  thumbnail: string;
+}
+
+export interface QuickItem {
+  id: string; label: string; sub: string; route: string;
+}
+
+export interface QuickGroup { group: string; items: QuickItem[] }
 
 export interface IndicatorMeta {
   kind: string;
@@ -394,8 +433,29 @@ export const api = {
     place: (body: {
       ticker: string; direction: "long" | "short"; size: number;
       account_id?: string; closing?: boolean; reference_price?: number;
-    }) => post<{ account_id: string; ticker: string; direction: string;
+      stop_loss?: number; take_profit?: number;
+    }) => post<{ position_id: string; attached_orders: string[];
+                 account_id: string; ticker: string; direction: string;
                  size: number; fill_price: number; balance: number }>("/orders", body),
+    pending: (accountId?: string, ticker?: string) => {
+      const qs = new URLSearchParams();
+      if (accountId) qs.set("account_id", accountId);
+      if (ticker) qs.set("ticker", ticker);
+      return get<{ orders: PendingOrder[]; types: { kind: string; description: string }[] }>(
+        `/orders/pending${qs.toString() ? `?${qs}` : ""}`);
+    },
+    placePending: (body: {
+      ticker: string; direction: "long" | "short"; size: number;
+      order_type: string; trigger_price: number; limit_price?: number;
+      account_id?: string; position_id?: string;
+    }) => post<PendingOrder>("/orders/pending", body),
+    cancelPending: (id: string) => del<PendingOrder>(`/orders/pending/${id}`),
+    monitor: () => get<OrderMonitor>("/orders/monitor"),
+    news: (q: string, limit = 20) =>
+      get<{ query: string; items: NewsItem[] }>(
+        `/news?q=${encodeURIComponent(q)}&limit=${limit}`),
+    quickSearch: (q: string) =>
+      get<{ groups: QuickGroup[] }>(`/quick-search?q=${encodeURIComponent(q)}`),
     indicators: () => get<{ indicators: IndicatorMeta[] }>("/indicators"),
     indicator: (kind: string, ticker: string, period: number,
                 interval: string, days: number) =>

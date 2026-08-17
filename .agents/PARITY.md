@@ -20,6 +20,7 @@ interaction model is theirs rather than an imitation.
 | Drawing tools (trendlines, fib) | ❌ not built |
 | Indicator overlays (SMA, EMA, VWAP, RSI) | ✅ added after this audit |
 | Price alerts | ❌ not built |
+| News feed | ✅ added |
 | Compare instruments on one chart | ❌ not built |
 
 Indicator overlays were the gap worth closing, and are done: SMA, EMA, VWAP
@@ -43,13 +44,19 @@ product's purpose, which is automated systems.
 | Account switching | ✅ |
 | Trade history with full detail | ✅ |
 | Realised **and** unrealised in headline totals | ✅ (fixed in this audit) |
-| Limit / stop orders | ❌ not built |
-| Stop-loss and take-profit attached at entry | ❌ not built |
+| Limit / stop orders | ✅ |
+| Stop-loss and take-profit attached at entry | ✅ |
 | Fractional-size helper ("invest $X") | ❌ not built |
 
-Order types are the real gap. A strategy sets its own stops internally, so
-this only limits manual trading — which the product deliberately treats as
-secondary.
+Order types are done. Resting orders live in `src/orders.py` and a monitor
+sweeps every 20s — timer-driven rather than streamed, because the free data
+providers are polled anyway and yfinance is ~15s delayed, so a tighter loop
+would re-read the same quote. Protective exits are attached to the position
+they guard and cancelled with it, since a stop-loss outliving its position
+would open a new one in the opposite direction.
+
+The remaining gap is fractional sizing ("invest $X"), which is arithmetic on
+top of what exists rather than new machinery.
 
 ## Added after this audit
 

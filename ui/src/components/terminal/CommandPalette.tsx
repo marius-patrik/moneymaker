@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, CornerDownLeft } from "lucide-react";
 import { SECTIONS } from "@/components/terminal/SectionNav";
-import { api, type Strategy } from "@/lib/api";
+import { api, type QuickGroup } from "@/lib/api";
 
 interface Command {
   id: string;
@@ -25,15 +25,28 @@ export function CommandPalette({
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [remote, setRemote] = useState<QuickGroup[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    setQuery(""); setCursor(0);
+    setQuery(""); setCursor(0); setRemote([]);
     inputRef.current?.focus();
-    api.strategies.list().then((r) => setStrategies(r.strategies)).catch(() => {});
   }, [open]);
+
+  // Anything typed is searched across instruments, systems, accounts and
+  // recorded runs — not just the page names the palette knew before.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setRemote([]); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      api.orders.quickSearch(q)
+        .then((r) => { if (alive) setRemote(r.groups); })
+        .catch(() => { if (alive) setRemote([]); });
+    }, 220);
+    return () => { alive = false; clearTimeout(t); };
+  }, [query]);
 
   const commands: Command[] = useMemo(() => [
     ...SECTIONS.map((n: { to: string; label: string }) => ({
@@ -42,16 +55,28 @@ export function CommandPalette({
     })),
     { id: "settings", label: "Settings", group: "Go to",
       run: () => { navigate("/settings"); onClose(); } },
-    ...strategies.map((s) => ({
-      id: `strat:${s.name}`, label: s.name, group: "Strategies",
-      run: () => { navigate("/workspace"); onClose(); },
-    })),
-  ], [strategies, navigate, onClose]);
+    ...remote.flatMap((g) =>
+      g.items.map((it) => ({
+        id: `${g.group}:${it.id}`,
+        label: it.label,
+        hint: it.sub,
+        group: g.group,
+        run: () => {
+          // Selecting an instrument should land on it, not merely on the page.
+          if (g.group === "Instruments") localStorage.setItem("mm.ticker", it.id);
+          if (g.group === "Systems") localStorage.setItem("mm.strategy", it.id);
+          navigate(it.route);
+          onClose();
+        },
+      }))),
+  ], [remote, navigate, onClose]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return commands;
-    return commands.filter((c) => c.label.toLowerCase().includes(q));
+    // Navigation is filtered locally; everything else already came back
+    // matched from the server.
+    return commands.filter((c) => c.group !== "Go to" || c.label.toLowerCase().includes(q));
   }, [commands, query]);
 
   useEffect(() => { setCursor(0); }, [query]);
@@ -98,7 +123,7 @@ export function CommandPalette({
                 ref={inputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search pages and strategies…"
+                placeholder="Search instruments, systems, accounts, history…"
                 aria-label="Search commands"
                 className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
@@ -133,7 +158,9 @@ export function CommandPalette({
                       <span className="truncate">{c.label}</span>
                       <span className="flex shrink-0 items-center gap-2">
                         {c.hint && (
-                          <span className="font-mono text-[10px] text-muted-foreground">{c.hint}</span>
+                          <span className="max-w-[16rem] truncate text-[10px] text-muted-foreground">
+                            {c.hint}
+                          </span>
                         )}
                         {i === cursor && <CornerDownLeft className="h-3 w-3 text-muted-foreground" />}
                       </span>

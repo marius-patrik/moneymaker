@@ -338,7 +338,13 @@ GET  /api/rankings
 GET  /api/jobs                 GET /api/jobs/<id>   POST /api/jobs/<id>/cancel
 GET  /api/stats                realised + unrealised P&L, win rate, profit factor
 GET  /api/equity               cumulative P&L across every session
-POST /api/orders          {ticker, direction, size, account_id?}  — manual order
+POST /api/orders          {ticker, direction, size, stop_loss?, take_profit?}
+GET  /api/orders/pending       resting limit / stop orders
+POST /api/orders/pending  {ticker, direction, size, order_type, trigger_price}
+DELETE /api/orders/pending/<id>
+GET  /api/orders/monitor       whether resting orders are being watched
+GET  /api/news?q=              headlines for a topic or ticker
+GET  /api/quick-search?q=      instruments, systems, accounts and runs at once
 GET  /api/quote/<ticker>       last price
 GET  /api/search?q=           instrument search
 GET  /api/indicators          overlays the chart can draw
@@ -425,8 +431,8 @@ The UI is built as a terminal rather than a dashboard of cards:
 - A **status bar** reports connection, data directory and version.
 - Content sits in **panels** with dense title strips and hairline seams, and
   lists are **tables**, not stacks of cards.
-- **⌘K** opens a command palette over pages and strategies; ⌘B collapses the
-  rail, ⌘, opens settings.
+- **⌘K** searches everything at once — instruments, systems, accounts and
+  recorded runs — and selecting an instrument lands on it.
 - Surfaces are layered: a soft ambient wash on the page, panels above it, and
   frosted chrome the content scrolls beneath. Only P&L figures carry colour.
 - Icons animate on hover with a gesture in the direction the control acts.

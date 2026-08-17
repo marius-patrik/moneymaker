@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, CandlestickChart, Wallet, Settings, Zap } from "lucide-react";
+import { LayoutDashboard, CandlestickChart, Wallet, Settings, Zap, Newspaper } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedIcon, type IconMotion } from "@/components/ui/animated-icon";
 
@@ -16,6 +16,7 @@ export const SECTIONS: {
   { to: "/",           icon: LayoutDashboard,  label: "Overview",   motion: "lift" },
   { to: "/trade",      icon: CandlestickChart, label: "Trade",      motion: "draw" },
   { to: "/strategies", icon: Zap,              label: "Strategies", motion: "pop" },
+  { to: "/news",       icon: Newspaper,        label: "News",       motion: "lift" },
   { to: "/portfolio",  icon: Wallet,           label: "Portfolio",  motion: "lift" },
 ];
 

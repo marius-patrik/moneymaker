@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import logging
 import os
 import pathlib
 import threading
@@ -17,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.accounts import AccountManager, CredentialStore
+
+log = logging.getLogger(__name__)
 from src.data import DataFeed
 from src.engine import Simulator
 from src.jobs import JobManager
@@ -39,6 +42,9 @@ class ServerState:
         self.sessions: dict[str, Simulator] = {}
         self.lock = threading.Lock()
         self.jobs = JobManager()
+        self.monitor_stop = threading.Event()
+        self.last_sweep: Optional[str] = None
+        self.sweep_error: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +129,17 @@ class SetHomeBody(BaseModel):
     home: str
 
 
+class PendingOrderBody(BaseModel):
+    ticker: str
+    direction: str                     # "long" | "short"
+    size: float
+    order_type: str                    # limit | stop | stop_loss | take_profit
+    trigger_price: float
+    limit_price: Optional[float] = None
+    account_id: Optional[str] = None
+    position_id: Optional[str] = None  # for protective exits
+
+
 class ManualOrderBody(BaseModel):
     ticker: str
     direction: str                     # "long" | "short"
@@ -132,6 +149,9 @@ class ManualOrderBody(BaseModel):
     closing: bool = False
     reference_price: Optional[float] = None   # omitted → fetch the last price
     data_provider: str = "yfinance"
+    # Attached at entry, the way a broker's ticket does it.
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
 
 
 class CreateStrategyBody(BaseModel):
@@ -199,6 +219,31 @@ class OptimizeBody(BaseModel):
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
+# Names traders use that Yahoo's search does not resolve, mapped to the
+# nearest instrument it actually carries. The note is shown in the UI so the
+# substitution is never silent.
+INSTRUMENT_ALIASES: dict[str, list[tuple[str, str, str, str]]] = {
+    "xauusd": [
+        ("GC=F", "Gold futures", "future", "Yahoo has no spot gold — this is the front-month future"),
+        ("PAXG-USD", "PAX Gold", "cryptocurrency", "Tokenised gold, tracks spot closely"),
+        ("GLD", "SPDR Gold Shares", "etf", "Gold ETF"),
+    ],
+    "xagusd": [
+        ("SI=F", "Silver futures", "future", "Yahoo has no spot silver — front-month future"),
+        ("SLV", "iShares Silver Trust", "etf", "Silver ETF"),
+    ],
+    "xptusd": [("PL=F", "Platinum futures", "future", "Front-month future")],
+    "wti": [("CL=F", "Crude Oil WTI futures", "future", "")],
+    "brent": [("BZ=F", "Brent Crude futures", "future", "")],
+    "natgas": [("NG=F", "Natural Gas futures", "future", "")],
+    "spx": [("^GSPC", "S&P 500 Index", "index", ""), ("ES=F", "E-mini S&P 500", "future", "")],
+    "nas100": [("^NDX", "Nasdaq 100 Index", "index", ""), ("NQ=F", "E-mini Nasdaq 100", "future", "")],
+    "us30": [("^DJI", "Dow Jones Industrial Average", "index", ""), ("YM=F", "E-mini Dow", "future", "")],
+    "ger40": [("^GDAXI", "DAX Index", "index", "")],
+    "uk100": [("^FTSE", "FTSE 100 Index", "index", "")],
+}
+
 
 def _mark_open(home: str, account_id: Optional[str] = None) -> tuple[list[dict], float]:
     """
@@ -807,26 +852,54 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
     @api.get("/search")
     def search_instruments(q: str, limit: int = 12):
         """
-        Instrument search, so a system can be pointed at something without
-        knowing Yahoo's exact symbol for it.
+        Instrument search.
+
+        Yahoo's index misses names traders actually use — searching
+        "XAUUSD" returns nothing, because Yahoo carries no spot metals at
+        all. ALIASES map those names to the nearest instrument that does
+        exist and say so, rather than leaving the search empty. A literal
+        symbol is also probed directly, so a known ticker always resolves.
         """
-        if not q.strip():
+        query = q.strip()
+        if not query:
             return {"results": []}
+
+        results: list[dict] = []
+        seen: set[str] = set()
+
+        def add(symbol: str, name: str, kind: str, exchange: str, note: str = ""):
+            if symbol and symbol not in seen:
+                seen.add(symbol)
+                results.append({"symbol": symbol, "name": name,
+                                "type": kind, "exchange": exchange, "note": note})
+
+        for sym, name, kind, note in INSTRUMENT_ALIASES.get(query.lower().replace("/", ""), []):
+            add(sym, name, kind, "", note)
+
         try:
             import yfinance as yf
-            hits = yf.Search(q.strip(), max_results=min(limit, 25)).quotes or []
-        except Exception as e:
-            raise HTTPException(502, f"search unavailable: {e}")
+            for h in (yf.Search(query, max_results=min(limit, 25)).quotes or []):
+                add(h.get("symbol"), h.get("shortname") or h.get("longname") or "",
+                    (h.get("quoteType") or "").lower(), h.get("exchange") or "")
+        except Exception:
+            pass    # aliases and the literal probe below may still answer
 
-        return {"results": [
-            {
-                "symbol": h.get("symbol"),
-                "name": h.get("shortname") or h.get("longname") or "",
-                "type": (h.get("quoteType") or "").lower(),
-                "exchange": h.get("exchange") or "",
-            }
-            for h in hits if h.get("symbol")
-        ]}
+        # An exact symbol the index does not surface should still resolve.
+        if not results and query.upper() == query.replace(" ", ""):
+            try:
+                import yfinance as yf
+                probe = yf.Ticker(query.upper())
+                if probe.fast_info.last_price:
+                    add(query.upper(), "", "", "")
+            except Exception:
+                pass
+
+        if not results:
+            raise HTTPException(
+                404,
+                f"No instrument matches '{query}'. Yahoo carries no spot FX metals "
+                f"— try the futures contract (GC=F for gold, SI=F for silver) or an ETF.")
+        return {"results": results[:limit]}
 
     @api.get("/history/{ticker:path}")
     def get_history(ticker: str, interval: str = "1h", days: int = 30,
@@ -888,6 +961,95 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             "high": max(b["high"] for b in candles),
             "low": min(b["low"] for b in candles),
         }
+
+    @api.get("/news")
+    def get_news(q: str = "markets", limit: int = 20):
+        """
+        Headlines for an instrument or topic.
+
+        Release *dates* come from the economic calendar; this is the
+        narrative around them, which is what a discretionary read needs and
+        the calendar cannot give.
+        """
+        try:
+            import yfinance as yf
+            items = yf.Search(q.strip() or "markets",
+                              news_count=min(limit, 50)).news or []
+        except Exception as e:
+            raise HTTPException(502, f"news unavailable: {e}")
+
+        out = []
+        for n in items:
+            published = n.get("providerPublishTime")
+            out.append({
+                "title": n.get("title") or "",
+                "publisher": n.get("publisher") or "",
+                "link": n.get("link") or "",
+                "published": (dt.datetime.fromtimestamp(published).isoformat(timespec="seconds")
+                              if published else ""),
+                "tickers": n.get("relatedTickers") or [],
+                "thumbnail": (((n.get("thumbnail") or {}).get("resolutions") or [{}])[0]
+                              .get("url", "")),
+            })
+        out.sort(key=lambda x: x["published"], reverse=True)
+        return {"query": q, "items": out}
+
+    @api.get("/quick-search")
+    def quick_search(q: str, limit: int = 8):
+        """
+        One search across everything: instruments, strategies, accounts and
+        recorded runs.
+
+        The palette used to search only pages and strategy names, so finding
+        an instrument or a past run meant knowing which screen to visit first.
+        """
+        query = q.strip().lower()
+        if not query:
+            return {"groups": []}
+
+        groups: list[dict] = []
+
+        strategies = [
+            {"id": n, "label": n, "sub": (c.__doc__ or "").strip().split("\n")[0][:60],
+             "route": "/strategies"}
+            for n, c in load_strategies(state.home).items()
+            if query in n.lower()
+        ][:limit]
+        if strategies:
+            groups.append({"group": "Systems", "items": strategies})
+
+        accounts = [
+            {"id": a.account_id, "label": a.name,
+             "sub": f"{a.provider} · {a.balance:,.2f}", "route": "/portfolio"}
+            for a in AccountManager(state.home).list()
+            if query in a.name.lower() or query in a.account_id.lower()
+        ][:limit]
+        if accounts:
+            groups.append({"group": "Accounts", "items": accounts})
+
+        sess_dir = pathlib.Path(state.home) / "sessions"
+        if sess_dir.is_dir():
+            runs = [
+                {"id": p.name, "label": p.stem, "sub": "recorded run", "route": "/portfolio"}
+                for p in sorted(sess_dir.glob("*.csv"),
+                                key=lambda x: x.stat().st_mtime, reverse=True)
+                if query in p.stem.lower()
+            ][:limit]
+            if runs:
+                groups.append({"group": "History", "items": runs})
+
+        try:
+            found = search_instruments(q, limit=limit)["results"]
+            if found:
+                groups.append({"group": "Instruments", "items": [
+                    {"id": r["symbol"], "label": r["symbol"],
+                     "sub": r.get("note") or r["name"], "route": "/trade"}
+                    for r in found
+                ]})
+        except HTTPException:
+            pass    # no instrument match is not an error for a mixed search
+
+        return {"groups": groups}
 
     @api.get("/indicators")
     def list_indicators():
@@ -968,8 +1130,25 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             account_id=account_id, ticker=body.ticker, direction=body.direction,
             size=body.size, price=fill,
         )
+        # Protective exits are placed against the new position, so closing it
+        # by hand takes them with it.
+        from src.orders import OrderBook
+        book = OrderBook(state.home)
+        closing_side = "short" if body.direction == "long" else "long"
+        attached = []
+        for kind, trigger in (("stop_loss", body.stop_loss),
+                              ("take_profit", body.take_profit)):
+            if trigger:
+                attached.append(book.place(
+                    account_id=account_id, ticker=body.ticker,
+                    direction=closing_side, size=body.size,
+                    order_type=kind, trigger_price=trigger,
+                    position_id=pos["id"],
+                ))
+
         return {
             "position_id": pos["id"],
+            "attached_orders": [o["id"] for o in attached],
             "account_id": account_id,
             "ticker": body.ticker,
             "direction": body.direction,
@@ -977,6 +1156,45 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             "fill_price": fill,
             "balance": provider.get_account_balance(account_id),
         }
+
+    # ---- pending orders ----
+
+    @api.get("/orders/pending")
+    def list_pending(account_id: Optional[str] = None, ticker: Optional[str] = None):
+        from src.orders import ORDER_TYPES, OrderBook
+        return {
+            "orders": OrderBook(state.home).list(account_id, ticker),
+            "types": [{"kind": k, "description": v} for k, v in ORDER_TYPES.items()],
+        }
+
+    @api.post("/orders/pending")
+    def place_pending(body: PendingOrderBody):
+        """
+        Rest an order until the market reaches it.
+
+        The execution provider fills the moment it is called, so anything
+        conditional waits here and the monitor releases it.
+        """
+        from src.orders import OrderBook
+        provider = make_provider("simulated", state.home)
+        account_id = _resolve_account(provider, body.account_id, 10000.0)
+        try:
+            return OrderBook(state.home).place(
+                account_id=account_id, ticker=body.ticker, direction=body.direction,
+                size=body.size, order_type=body.order_type,
+                trigger_price=body.trigger_price, limit_price=body.limit_price,
+                position_id=body.position_id,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @api.delete("/orders/pending/{order_id}")
+    def cancel_pending(order_id: str):
+        from src.orders import OrderBook
+        try:
+            return OrderBook(state.home).cancel(order_id)
+        except KeyError:
+            raise HTTPException(404, "unknown order")
 
     @api.post("/positions/{position_id}/close")
     def close_position(position_id: str, price: Optional[float] = None,
@@ -1002,6 +1220,10 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         )
         closed = book.close(position_id, price)
         provider.on_trade_closed(pos["account_id"], closed["pnl"])
+        # A stop-loss left working after its position closed would open a new
+        # position in the opposite direction the next time it triggered.
+        from src.orders import OrderBook
+        OrderBook(state.home).cancel_for_position(position_id)
         return closed
 
     @api.get("/positions/{position_id}")
@@ -1362,6 +1584,81 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             raise HTTPException(404, "unknown session_id")
         sim.stopped.set()
         return {"stopped": session_id}
+
+    # ---- resting-order monitor ----
+
+    def _sweep_orders() -> None:
+        """
+        Fill any resting order the market has reached.
+
+        Runs on a timer rather than a price stream because the free data
+        providers are polled anyway — yfinance is ~15s delayed, so a tighter
+        loop would only re-read the same quote.
+        """
+        from src.data_providers import make_data_provider
+        from src.orders import OrderBook, fill_price_for
+
+        book = OrderBook(state.home)
+        prov = make_data_provider("yfinance", state.home)
+
+        def quote(ticker: str) -> Optional[float]:
+            return prov.get_last_price(ticker)[0]
+
+        for order, market_price in book.marketable(quote):
+            fill = fill_price_for(order, market_price)
+            provider = make_provider("simulated", state.home)
+            try:
+                provider.execute_order(
+                    account_id=order["account_id"], ticker=order["ticker"],
+                    direction=order["direction"], size=order["size"],
+                    reference_price=fill, timestamp=dt.datetime.now(),
+                    closing=bool(order.get("position_id")),
+                )
+            except Exception as e:
+                log.warning("order %s failed to fill: %s", order["id"], e)
+                continue
+
+            from src.book import ManualBook
+            mbook = ManualBook(state.home)
+            if order.get("position_id"):
+                # A protective exit closes the position it guards.
+                try:
+                    closed = mbook.close(order["position_id"], fill,
+                                         reason=order["type"])
+                    provider.on_trade_closed(order["account_id"], closed["pnl"])
+                except KeyError:
+                    pass          # position already gone; drop the order
+                book.cancel_for_position(order["position_id"])
+            else:
+                mbook.open(account_id=order["account_id"], ticker=order["ticker"],
+                           direction=order["direction"], size=order["size"],
+                           price=fill, note=f"{order['type']} order {order['id']}")
+                book.remove(order["id"])
+
+    def _monitor_loop() -> None:
+        while not state.monitor_stop.wait(20):
+            try:
+                _sweep_orders()
+                state.last_sweep = dt.datetime.now().isoformat(timespec="seconds")
+                state.sweep_error = None
+            except Exception as e:
+                # The monitor must outlive a bad quote or a missing provider.
+                state.sweep_error = f"{type(e).__name__}: {e}"
+                log.exception("order sweep failed")
+
+    threading.Thread(target=_monitor_loop, daemon=True).start()
+
+    @api.get("/orders/monitor")
+    def monitor_status():
+        """Whether resting orders are actually being watched."""
+        from src.orders import OrderBook
+        return {
+            "running": not state.monitor_stop.is_set(),
+            "interval_seconds": 20,
+            "last_sweep": state.last_sweep,
+            "error": state.sweep_error,
+            "working_orders": len(OrderBook(state.home).list()),
+        }
 
     app.include_router(api)
 

@@ -282,3 +282,16 @@ SMA, EMA, VWAP and RSI in src/indicators.py, exposed via /api/indicators and
 already reason about these, and one implementation cannot drift from another.
 VWAP falls back to an unweighted mean when the feed reports no volume, which
 yfinance futures do. 12 tests.
+
+### Limit/stop orders, news, universal search (DONE 2026-08-17)
+src/orders.py holds resting orders; a 20s monitor sweeps and fills them.
+Protective exits attach to a position and are cancelled with it — a
+stop-loss outliving its position would open a new one in the opposite
+direction. 20 tests.
+
+Instrument search gained aliases: Yahoo carries no spot metals, so "XAUUSD"
+returned nothing. It now maps to GC=F / PAXG-USD / GLD with a note saying
+why, and a literal symbol is probed when the index misses it.
+
+/api/news for headlines, /api/quick-search across instruments, systems,
+accounts and runs — the palette searched only page names before.

@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/lib/useResource";
 import { PriceChart, OhlcReadout, type ChartKind } from "@/components/terminal/PriceChart";
 import { PositionsPanel } from "@/components/terminal/PositionsPanel";
+import { PendingOrdersPanel } from "@/components/terminal/PendingOrdersPanel";
 import { IndicatorPicker, type ActiveIndicator } from "@/components/terminal/IndicatorPicker";
 import { api, type Candle, type IndicatorSeries } from "@/lib/api";
 import { cn, fmt, fmtDollar, fmtPct } from "@/lib/utils";
@@ -77,6 +78,11 @@ export function Trade() {
   });
   const [ticker, setTicker] = useState(() => localStorage.getItem(TICKER_KEY) ?? DEFAULT_WATCH[0]);
   const [size, setSize] = useState("1");
+  const [orderKind, setOrderKind] = useState<"market" | "limit" | "stop">("market");
+  const [trigger, setTrigger] = useState("");
+  const [stopLoss, setStopLoss] = useState("");
+  const [takeProfit, setTakeProfit] = useState("");
+  const [ordNonce, setOrdNonce] = useState(0);
   const [accountId, setAccountId] = useState("");
   const [placing, setPlacing] = useState<"long" | "short" | null>(null);
   const [posNonce, setPosNonce] = useState(0);
@@ -120,13 +126,30 @@ export function Trade() {
   async function place(direction: "long" | "short") {
     setPlacing(direction);
     try {
-      const r = await api.orders.place({
-        ticker, direction, size: Number(size), account_id: accountId || undefined,
-      });
-      toast(`${direction === "long" ? "Bought" : "Sold"} ${r.size} ${r.ticker} @ ${fmt(r.fill_price)}`,
-            "success");
+      if (orderKind === "market") {
+        const r = await api.orders.place({
+          ticker, direction, size: Number(size), account_id: accountId || undefined,
+          stop_loss: stopLoss ? Number(stopLoss) : undefined,
+          take_profit: takeProfit ? Number(takeProfit) : undefined,
+        });
+        const guards = r.attached_orders.length
+          ? ` (+${r.attached_orders.length} exit${r.attached_orders.length > 1 ? "s" : ""})` : "";
+        toast(`${direction === "long" ? "Bought" : "Sold"} ${r.size} ${r.ticker} @ ${fmt(r.fill_price)}${guards}`,
+              "success");
+        setPosNonce((n) => n + 1);
+      } else {
+        if (!trigger) throw new Error(`A ${orderKind} order needs a trigger price`);
+        const o = await api.orders.placePending({
+          ticker, direction, size: Number(size), order_type: orderKind,
+          trigger_price: Number(trigger),
+          limit_price: orderKind === "limit" ? Number(trigger) : undefined,
+          account_id: accountId || undefined,
+        });
+        toast(`${orderKind} ${direction} ${o.size} ${o.ticker} resting @ ${fmt(o.trigger_price)}`,
+              "success");
+        setOrdNonce((n) => n + 1);
+      }
       accounts.reload();
-      setPosNonce((n) => n + 1);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Order rejected", "error");
     }
@@ -217,7 +240,27 @@ export function Trade() {
 
           <Panel title="Ticket">
             <div className="space-y-3">
+              <div className="flex rounded-lg bg-muted p-0.5">
+                {(["market", "limit", "stop"] as const).map((k) => (
+                  <button key={k} onClick={() => setOrderKind(k)}
+                          className={cn("flex-1 rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors",
+                            orderKind === k ? "bg-background shadow-sm" : "text-muted-foreground")}>
+                    {k}
+                  </button>
+                ))}
+              </div>
+
               <Field label="Size" type="number" value={size} onValueChange={setSize} />
+
+              {orderKind !== "market" && (
+                <Field
+                  label={orderKind === "limit" ? "Limit price" : "Stop price"}
+                  type="number" value={trigger} onValueChange={setTrigger}
+                  placeholder={last != null ? fmt(last) : ""}
+                  hint={orderKind === "limit"
+                    ? "Buy below the market, sell above."
+                    : "Buy above the market, sell below."} />
+              )}
               <div className="space-y-1">
                 <Label htmlFor="trade-account" className="text-xs">Account</Label>
                 <Select value={accountId} onValueChange={setAccountId}>
@@ -247,6 +290,15 @@ export function Trade() {
                 </div>
               </div>
 
+              {orderKind === "market" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Stop loss" type="number" value={stopLoss}
+                         onValueChange={setStopLoss} placeholder="optional" />
+                  <Field label="Take profit" type="number" value={takeProfit}
+                         onValueChange={setTakeProfit} placeholder="optional" />
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <Button className="w-full bg-profit text-white hover:bg-profit/90"
                         onClick={() => place("long")} disabled={!!placing}>
@@ -263,9 +315,11 @@ export function Trade() {
               </div>
             </div>
           </Panel>
-          <div className="xl:col-span-2">
+          <div className="space-y-3 xl:col-span-2">
             <PositionsPanel accountId={accountId || undefined} refreshKey={posNonce}
                             onChanged={() => { accounts.reload(); setPosNonce((n) => n + 1); }} />
+            <PendingOrdersPanel accountId={accountId || undefined} refreshKey={ordNonce}
+                                onChanged={() => setOrdNonce((n) => n + 1)} />
           </div>
         </div>
       </div>

@@ -10,6 +10,7 @@ import { CommandPalette } from "@/components/terminal/CommandPalette";
 import { Dashboard } from "@/pages/Dashboard";
 import { Trade } from "@/pages/Trade";
 import { Strategies } from "@/pages/Strategies";
+import { News } from "@/pages/News";
 import { Portfolio } from "@/pages/Portfolio";
 import { Settings } from "@/pages/Settings";
 
@@ -43,6 +44,7 @@ export function App() {
     ["/", <Dashboard />],
     ["/trade", <Trade />],
     ["/strategies", <Strategies />],
+    ["/news", <News />],
     ["/portfolio", <Portfolio />],
     ["/settings", <Settings />],
   ];
