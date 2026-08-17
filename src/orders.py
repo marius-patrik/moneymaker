@@ -78,7 +78,7 @@ class OrderBook:
 
     def place(self, *, account_id: str, ticker: str, direction: str, size: float,
               order_type: str, trigger_price: float, limit_price: Optional[float] = None,
-              position_id: Optional[str] = None) -> dict:
+              position_id: Optional[str] = None, tif: str = "gtc") -> dict:
         if order_type not in ORDER_TYPES:
             raise ValueError(f"unknown order type: {order_type}")
         if direction not in ("long", "short"):
@@ -87,6 +87,8 @@ class OrderBook:
             raise ValueError("size must be positive")
         if trigger_price <= 0:
             raise ValueError("trigger price must be positive")
+        if tif not in ("gtc", "day"):
+            raise ValueError("tif must be 'gtc' or 'day'")
 
         order = {
             "id": uuid.uuid4().hex[:10],
@@ -100,6 +102,10 @@ class OrderBook:
             "limit_price": limit_price if order_type == "limit" else None,
             "position_id": position_id,
             "status": "working",
+            # A day order dies at the end of the session it was placed in; a
+            # GTC order rests until filled or cancelled.
+            "tif": tif,
+            "placed_on": dt.date.today().isoformat(),
             "placed_at": dt.datetime.now().isoformat(timespec="seconds"),
         }
         with self._lock:
@@ -135,6 +141,26 @@ class OrderBook:
             data = self._read()
             data.pop(order_id, None)
             self._write(data)
+
+    def expire_day_orders(self, today: Optional[dt.date] = None) -> list[dict]:
+        """
+        Drop day orders left over from an earlier session.
+
+        Run at sweep time rather than on a schedule, so an order cannot
+        outlive its day just because the server was asleep at midnight.
+        """
+        today = today or dt.date.today()
+        with self._lock:
+            data = self._read()
+            stale = [o for o in data.values()
+                     if o.get("tif") == "day"
+                     and o.get("placed_on")
+                     and o["placed_on"] < today.isoformat()]
+            for o in stale:
+                data.pop(o["id"], None)
+            if stale:
+                self._write(data)
+        return [{**o, "status": "expired"} for o in stale]
 
     def cancel_for_position(self, position_id: str) -> int:
         """

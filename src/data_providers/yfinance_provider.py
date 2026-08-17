@@ -38,3 +38,33 @@ class YFinanceDataProvider(DataProvider):
 
     def get_last_price(self, ticker: str) -> tuple[float, dt.datetime]:
         return DataFeed.get_last_price(ticker)
+
+    def get_last_prices(self, tickers: list[str]) -> dict[str, float]:
+        """
+        Last price for many instruments in one request.
+
+        Polling each separately costs one HTTP round trip per instrument,
+        which caps how many can be recorded; batched, twenty cost about the
+        same as one.
+        """
+        if not tickers:
+            return {}
+        import yfinance as yf
+
+        out: dict[str, float] = {}
+        try:
+            data = yf.download(tickers=" ".join(tickers), period="1d",
+                               interval="1m", progress=False,
+                               group_by="ticker", threads=True)
+        except Exception:
+            return out
+
+        for tk in tickers:
+            try:
+                frame = data[tk] if len(tickers) > 1 else data
+                closes = frame["Close"].dropna()
+                if len(closes):
+                    out[tk] = float(closes.iloc[-1])
+            except Exception:
+                continue    # a delisted or misspelled symbol must not break the batch
+        return out

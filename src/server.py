@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import json
 import logging
 import os
 import pathlib
@@ -45,6 +46,9 @@ class ServerState:
         self.monitor_stop = threading.Event()
         self.last_sweep: Optional[str] = None
         self.sweep_error: Optional[str] = None
+        self.missed_triggers: list[dict] = []
+        self.last_tick_count = 0
+        self.recorded_instruments = 0
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +127,10 @@ class EvolveBody(BaseModel):
     generations: int = 20
     perturbation: float = 0.20
     start_params: Optional[dict[str, Any]] = None
+
+
+class TickWatchBody(BaseModel):
+    instruments: list[str]
 
 
 class SetHomeBody(BaseModel):
@@ -243,6 +251,15 @@ INSTRUMENT_ALIASES: dict[str, list[tuple[str, str, str, str]]] = {
     "ger40": [("^GDAXI", "DAX Index", "index", "")],
     "uk100": [("^FTSE", "FTSE 100 Index", "index", "")],
 }
+
+
+def _recorded_instruments(home: str) -> list[str]:
+    """Instruments the tick recorder follows regardless of open interest."""
+    path = pathlib.Path(home) / "tick_watch.json"
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
 
 
 def _mark_open(home: str, account_id: Optional[str] = None) -> tuple[list[dict], float]:
@@ -705,6 +722,12 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         kwargs = {"path": body.data_provider_path} if body.data_provider_path else {}
         data_prov = make_data_provider(body.data_provider, state.home, **kwargs)
         df = data_prov.get_historical(body.ticker, body.start, body.end, interval=body.interval)
+        try:
+            from src.ticks import TickStore
+            TickStore(state.home).enroll(body.ticker)
+        except Exception:
+            pass
+
         strategy = strategy_cls(**body.params)
         provider = make_provider(body.provider, state.home)
         account_id = _resolve_account(provider, body.account_id, body.account)
@@ -928,6 +951,14 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         if c is None:
             raise HTTPException(400, f"no close prices for {ticker}")
 
+        # Charting an instrument enrolls it, so the archive follows what is
+        # actually used rather than a list someone has to maintain.
+        try:
+            from src.ticks import TickStore
+            TickStore(state.home).enroll(ticker)
+        except Exception:
+            pass
+
         candles = []
         for i, idx in enumerate(df.index):
             close = float(c.iloc[i])
@@ -1125,6 +1156,12 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
 
         # A fill that leaves no record is invisible afterwards, which is why
         # placing an order used to look like nothing happened.
+        try:
+            from src.ticks import TickStore
+            TickStore(state.home).enroll(body.ticker)
+        except Exception:
+            pass
+
         from src.book import ManualBook
         pos = ManualBook(state.home).open(
             account_id=account_id, ticker=body.ticker, direction=body.direction,
@@ -1587,6 +1624,58 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
 
     # ---- resting-order monitor ----
 
+    def _catch_up_orders() -> list[dict]:
+        """
+        Find orders the market reached while the server was down.
+
+        A resting order only triggers when something is watching. With a real
+        broker the order lives on their book and this cannot happen; with the
+        simulated provider the book is ours, so a gap in our uptime is a gap
+        in the market's supervision — and we can close it by replaying the
+        bars we missed rather than pretending the price never moved.
+        """
+        from src.data_providers import make_data_provider
+        from src.orders import OrderBook, fill_price_for, is_triggered
+
+        book = OrderBook(state.home)
+        working = book.list()
+        if not working:
+            return []
+
+        prov = make_data_provider("yfinance", state.home)
+        missed: list[dict] = []
+        history: dict[str, list[dict]] = {}
+
+        for order in working:
+            placed = dt.datetime.fromisoformat(order["placed_at"])
+            # Only look back as far as the order has existed.
+            days = max(1, (dt.datetime.now() - placed).days + 1)
+            key = f"{order['ticker']}:{days}"
+            if key not in history:
+                try:
+                    history[key] = get_history(order["ticker"], interval="5m",
+                                               days=min(days, 7))["candles"]
+                except Exception:
+                    history[key] = []
+            for bar in history[key]:
+                if bar["time"] < placed.timestamp():
+                    continue
+                # A bar's extreme is what would have touched the order.
+                extreme = bar["high"] if order["direction"] == "long" else bar["low"]
+                for probe in (bar["low"], bar["high"], extreme):
+                    if is_triggered(order, probe):
+                        missed.append({
+                            "order": order,
+                            "at": dt.datetime.fromtimestamp(bar["time"]).isoformat(
+                                timespec="seconds"),
+                            "price": fill_price_for(order, probe),
+                        })
+                        break
+                else:
+                    continue
+                break
+        return missed
+
     def _sweep_orders() -> None:
         """
         Fill any resting order the market has reached.
@@ -1601,8 +1690,34 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         book = OrderBook(state.home)
         prov = make_data_provider("yfinance", state.home)
 
+        for expired in book.expire_day_orders():
+            log.info("day order %s expired", expired["id"])
+
+        from src.ticks import TickStore
+        ticks = TickStore(state.home)
+
         def quote(ticker: str) -> Optional[float]:
-            return prov.get_last_price(ticker)[0]
+            price = prov.get_last_price(ticker)[0]
+            # The poll is happening anyway; recording it is what gives us
+            # intraday data finer than the provider's 1-minute bars.
+            ticks.record(ticker, price)
+            return price
+
+        # Record everything enrolled, not only what has a resting order —
+        # otherwise the archive is empty exactly when nothing is pending,
+        # which is most of the time. Batched, so a hundred instruments cost
+        # about one request rather than a hundred.
+        from src.book import ManualBook
+        watched = set(ticks.enrolled())
+        watched |= {o["ticker"] for o in book.list()}
+        watched |= {p["ticker"] for p in ManualBook(state.home).list()}
+        if watched:
+            try:
+                prices = prov.get_last_prices(sorted(watched))
+                state.last_tick_count = ticks.record_batch(prices)
+                state.recorded_instruments = len(prices)
+            except Exception as e:
+                log.warning("tick batch failed: %s", e)
 
         for order, market_price in book.marketable(quote):
             fill = fill_price_for(order, market_price)
@@ -1646,7 +1761,118 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
                 state.sweep_error = f"{type(e).__name__}: {e}"
                 log.exception("order sweep failed")
 
+    # Orders the market reached while we were not watching. Reported rather
+    # than silently filled: the user decides whether a missed fill is real.
+    try:
+        state.missed_triggers = _catch_up_orders()
+        if state.missed_triggers:
+            log.warning("%d resting order(s) were reached while the server was down",
+                        len(state.missed_triggers))
+    except Exception as e:
+        log.warning("catch-up scan failed: %s", e)
+
     threading.Thread(target=_monitor_loop, daemon=True).start()
+
+    @api.get("/orders/missed")
+    def missed_triggers():
+        """Resting orders the market reached while nothing was watching."""
+        return {
+            "missed": [
+                {"order_id": m["order"]["id"], "ticker": m["order"]["ticker"],
+                 "type": m["order"]["type"], "direction": m["order"]["direction"],
+                 "size": m["order"]["size"], "trigger_price": m["order"]["trigger_price"],
+                 "reached_at": m["at"], "fill_price": m["price"]}
+                for m in state.missed_triggers
+            ],
+            "count": len(state.missed_triggers),
+        }
+
+    @api.post("/orders/missed/{order_id}/fill")
+    def fill_missed(order_id: str):
+        """
+        Honour a missed trigger at the price the market actually reached.
+
+        Only meaningful for the simulated provider: a real broker would have
+        filled it on their own book while we were away.
+        """
+        entry = next((m for m in state.missed_triggers
+                      if m["order"]["id"] == order_id), None)
+        if not entry:
+            raise HTTPException(404, "no missed trigger for that order")
+
+        order, price = entry["order"], entry["price"]
+        provider = make_provider("simulated", state.home)
+        provider.execute_order(
+            account_id=order["account_id"], ticker=order["ticker"],
+            direction=order["direction"], size=order["size"],
+            reference_price=price, timestamp=dt.datetime.now(),
+            closing=bool(order.get("position_id")),
+        )
+
+        from src.book import ManualBook
+        from src.orders import OrderBook
+        book, mbook = OrderBook(state.home), ManualBook(state.home)
+        if order.get("position_id"):
+            try:
+                closed = mbook.close(order["position_id"], price, reason=order["type"])
+                provider.on_trade_closed(order["account_id"], closed["pnl"])
+            except KeyError:
+                pass
+            book.cancel_for_position(order["position_id"])
+        else:
+            mbook.open(account_id=order["account_id"], ticker=order["ticker"],
+                       direction=order["direction"], size=order["size"], price=price,
+                       note=f"missed {order['type']} filled at {entry['at']}")
+            book.remove(order["id"])
+
+        state.missed_triggers = [m for m in state.missed_triggers
+                                 if m["order"]["id"] != order_id]
+        return {"filled": order_id, "price": price, "at": entry["at"]}
+
+    @api.post("/orders/missed/dismiss")
+    def dismiss_missed():
+        """Acknowledge missed triggers without filling them."""
+        n = len(state.missed_triggers)
+        state.missed_triggers = []
+        return {"dismissed": n}
+
+    # ---- recorded ticks ----
+
+    @api.get("/ticks/watch")
+    def get_tick_watch():
+        return {"instruments": _recorded_instruments(state.home)}
+
+    @api.put("/ticks/watch")
+    def set_tick_watch(body: TickWatchBody):
+        """
+        Which instruments to record continuously.
+
+        Recording is the only way to get finer-than-1-minute data out of a
+        free provider, so this is the knob that decides what history you will
+        have later.
+        """
+        path = pathlib.Path(state.home) / "tick_watch.json"
+        cleaned = sorted({t.strip() for t in body.instruments if t.strip()})
+        path.write_text(json.dumps(cleaned, indent=2))
+        return {"instruments": cleaned}
+
+    @api.get("/ticks/stats")
+    def tick_stats():
+        from src.ticks import TickStore
+        return TickStore(state.home).stats()
+
+    @api.get("/ticks/{ticker:path}")
+    def tick_candles(ticker: str, seconds: int = 60, day: Optional[str] = None):
+        """Recorded ticks as OHLC bars, at resolutions the provider lacks."""
+        from src.ticks import TickStore
+        store = TickStore(state.home)
+        when = dt.date.fromisoformat(day) if day else None
+        return {
+            "ticker": ticker,
+            "seconds": seconds,
+            "candles": store.candles(ticker, when, seconds),
+            "days": store.days(ticker),
+        }
 
     @api.get("/orders/monitor")
     def monitor_status():
@@ -1658,6 +1884,9 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             "last_sweep": state.last_sweep,
             "error": state.sweep_error,
             "working_orders": len(OrderBook(state.home).list()),
+            "missed_triggers": len(state.missed_triggers),
+            "recorded_instruments": state.recorded_instruments,
+            "ticks_last_sweep": state.last_tick_count,
         }
 
     app.include_router(api)
