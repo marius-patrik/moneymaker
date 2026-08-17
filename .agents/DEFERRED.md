@@ -5,6 +5,18 @@ Each entry must state *why* it's deferred and *what would trigger revisiting it*
 
 ---
 
+---
+
+## Resolved — no longer deferred
+
+**Web UI** — built. A React terminal at `ui/`, served by the API in
+production. See README for what it covers.
+
+**TUI** — superseded by the web UI, which reaches the same machine over
+Tailscale and does more. Not planned.
+
+---
+
 ## Full harness integration
 
 Agents will eventually operate inside a full integrated harness (scheduling,
@@ -14,26 +26,6 @@ engine's strategy/fork/evolution layer is stable and delivering useful signal.
 **Trigger:** engine produces a consistently profitable strategy after fork-eval
 and evolution cycles, and agent tooling needs coordination beyond what a single
 CLI invocation provides.
-
----
-
-## TUI
-
-A terminal user interface for monitoring live-paper runs and reviewing backtest
-results interactively. Deferred — no human is expected to operate the system
-directly in practice; agent tooling covers the use cases.
-
-**Trigger:** explicit user request to build the TUI, or a use case that genuinely
-can't be handled via CLI + JSON output.
-
----
-
-## Web UI
-
-Browser-based interface for the engine and harness. Same rationale as TUI.
-
-**Trigger:** explicit user request, or harness is live and stakeholder needs
-a dashboard that isn't a terminal.
 
 ---
 

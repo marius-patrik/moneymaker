@@ -13,6 +13,8 @@ import { useResource } from "@/lib/useResource";
 import { PriceChart, OhlcReadout, type ChartKind } from "@/components/terminal/PriceChart";
 import { PositionsPanel } from "@/components/terminal/PositionsPanel";
 import { PendingOrdersPanel } from "@/components/terminal/PendingOrdersPanel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SystemsPanel } from "@/pages/SystemsPanel";
 import { IndicatorPicker, type ActiveIndicator } from "@/components/terminal/IndicatorPicker";
 import { api, type Candle, type IndicatorSeries } from "@/lib/api";
 import { cn, fmt, fmtDollar, fmtPct } from "@/lib/utils";
@@ -69,6 +71,13 @@ function WatchRow({ symbol, active, onSelect, onRemove }: {
  * A watchlist on the left, the selected instrument's chart and a ticket on
  * the right. Systems are deployed from Strategies; this is where you look at
  * a market and act on it directly.
+ */
+/**
+ * Trade.
+ *
+ * Manual execution and automated systems are two ways to act on the same
+ * instrument, so they live behind one tab strip rather than two
+ * destinations you navigate between mid-thought.
  */
 export function Trade() {
   const { toast } = useToast();
@@ -163,7 +172,20 @@ export function Trade() {
   const notional = last != null ? last * Number(size || 0) : null;
 
   return (
-    <div className="flex h-full min-h-0">
+    <Tabs defaultValue="manual" className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center justify-between border-b px-3 py-2">
+        <TabsList className="h-8">
+          <TabsTrigger value="manual" className="text-xs">Manual</TabsTrigger>
+          <TabsTrigger value="systems" className="text-xs">Systems</TabsTrigger>
+        </TabsList>
+      </div>
+
+      <TabsContent value="systems" className="m-0 min-h-0 flex-1 overflow-hidden">
+        <SystemsPanel />
+      </TabsContent>
+
+      <TabsContent value="manual" className="m-0 flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex h-full min-h-0 w-full">
       {/* watchlist */}
       <aside className="hidden w-60 shrink-0 flex-col border-r bg-card/40 lg:flex">
         <div className="flex h-11 shrink-0 items-center border-b px-3">
@@ -323,6 +345,8 @@ export function Trade() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+      </TabsContent>
+    </Tabs>
   );
 }

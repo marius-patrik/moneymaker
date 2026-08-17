@@ -33,7 +33,7 @@ function ListMetrics({ s }: { s?: StrategyStats }) {
   );
 }
 
-export function Strategies() {
+export function SystemsPanel() {
   const { toast } = useToast();
   const strategies = useResource(() => api.strategies.list(), []);
   const stats = useResource(() => api.strategies.stats(), [], { pollMs: 30000 });

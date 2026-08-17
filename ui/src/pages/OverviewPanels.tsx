@@ -16,7 +16,7 @@ function tone(n: number | null | undefined) {
   return n > 0 ? ("profit" as const) : ("loss" as const);
 }
 
-export function Dashboard() {
+export function OverviewPanels() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [equity, setEquity] = useState<EquityPoint[]>([]);
   const [dist, setDist] = useState<PnlDistribution | null>(null);
@@ -52,7 +52,7 @@ export function Dashboard() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className="space-y-3 p-3 pb-8 sm:p-4">
+                className="space-y-3">
       {/* performance summary — one panel, not eight floating tiles */}
       <Panel title="Performance">
         <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-9">
@@ -174,63 +174,6 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="grid gap-3 xl:grid-cols-2">
-        {/* live */}
-        <Panel title="Live positions" dense>
-          {liveIds.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-              Nothing running. Launch from <Link to="/terminal" className="underline">Trade</Link>.
-            </p>
-          ) : (
-            <DataTable head={<><th>Strategy</th><th>Status</th><th className="!text-right">Trades</th><th className="!text-right">P&L</th></>}>
-              {liveIds.map((id) => {
-                const s = liveStatuses[id];
-                return (
-                  <tr key={id}>
-                    <td className="font-mono">{id}</td>
-                    <td>
-                      <span className="flex items-center gap-1.5">
-                        <AnimatedIcon icon={Activity} active className="h-3 w-3 text-primary" />
-                        <Badge variant="secondary" className="text-[10px]">
-                          {s?.running ? "running" : "stopped"}
-                        </Badge>
-                      </span>
-                    </td>
-                    <td className="text-right tabular-nums">{s?.trade_count ?? "—"}</td>
-                    <td className={`text-right font-mono tabular-nums ${pnlColor(s?.total_pnl ?? 0)}`}>
-                      {s ? fmtDollar(s.total_pnl) : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </DataTable>
-          )}
-        </Panel>
-
-        {/* recent runs */}
-        <Panel title="Recent activity" dense
-               actions={
-                 <Link to="/portfolio"
-                       className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground">
-                   All <ArrowRight className="h-3 w-3" />
-                 </Link>}>
-          {sessions.length === 0 ? (
-            <p className="px-3 py-6 text-center text-xs text-muted-foreground">No activity yet.</p>
-          ) : (
-            <DataTable head={<><th>Run</th><th className="!text-right">Trades</th><th className="!text-right">P&L</th></>}>
-              {sessions.slice(0, 7).map((s) => (
-                <tr key={s.name}>
-                  <td className="max-w-0 truncate font-mono" title={s.name}>{s.name}</td>
-                  <td className="text-right tabular-nums text-muted-foreground">{s.trades ?? "—"}</td>
-                  <td className={`text-right font-mono tabular-nums ${pnlColor(s.total_pnl)}`}>
-                    {s.total_pnl != null ? fmtDollar(s.total_pnl) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </DataTable>
-          )}
-        </Panel>
-      </div>
     </motion.div>
   );
 }

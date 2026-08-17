@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Doc and workflow guards. Installed by `moneymaker hooks install`.
+#
+# These block a commit rather than warn, because a warning in a scrollback
+# is a warning nobody reads. Each is cheap and each has been an actual
+# problem in this repo at least once.
+set -uo pipefail
+
+fail=0
+note() { printf '  \033[31m✗\033[0m %s\n' "$1"; fail=1; }
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+
+echo "moneymaker pre-commit"
+
+# --- 1. A backlog holds what is NOT done -----------------------------------
+if git diff --cached --name-only | grep -q '^\.agents/BACKLOG\.md$'; then
+  if git show ":.agents/BACKLOG.md" | grep -qE '^### .*\((DONE|✅)'; then
+    note "BACKLOG.md contains completed items — promote them to CONTEXT.md."
+  else
+    ok "BACKLOG.md holds only outstanding work"
+  fi
+fi
+
+# --- 2. Never commit a secret ----------------------------------------------
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+if echo "$staged" | grep -qE '(^|/)credentials\.json$|\.env$'; then
+  note "Refusing to commit a credentials or .env file."
+fi
+if git diff --cached -U0 -- $staged 2>/dev/null \
+   | grep -qE '^\+.*(api[_-]?key|secret|token|password)[[:space:]]*[=:][[:space:]]*["'"'"'][A-Za-z0-9_\-]{16,}'; then
+  note "A staged line looks like a hard-coded secret. Use an env-var reference."
+fi
+
+# --- 3. Docs track the API surface -----------------------------------------
+if echo "$staged" | grep -q '^src/server\.py$'; then
+  missing=""
+  while read -r ep; do
+    [ -z "$ep" ] && continue
+    grep -q "api${ep%%\{*}" README.md || missing="$missing $ep"
+  done < <(git show ":src/server.py" \
+           | grep -oE '@api\.(get|post|put|delete)\("[^"]+"' \
+           | sed 's/.*("//;s/"//')
+  if [ -n "$missing" ]; then
+    note "Endpoints missing from README:$missing"
+  else
+    ok "every API route appears in the README"
+  fi
+fi
+
+# --- 4. New Python modules carry tests -------------------------------------
+for f in $(echo "$staged" | grep -E '^src/[a-z_]+\.py$' || true); do
+  base=$(basename "$f" .py)
+  case "$base" in cli|server|__init__) continue;; esac
+  if git diff --cached --diff-filter=A --name-only | grep -q "^$f$"; then
+    [ -f "tests/test_${base}.py" ] || note "New module $f has no tests/test_${base}.py"
+  fi
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "Commit blocked. Fix the above, or bypass with --no-verify if you truly must."
+  exit 1
+fi
+echo "  all checks passed"

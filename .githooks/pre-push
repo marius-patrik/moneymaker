@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Never push a red suite — CI will only tell you the same thing more slowly,
+# and every push here cuts a release.
+set -uo pipefail
+
+echo "moneymaker pre-push: running tests"
+PY=.venv/bin/pytest
+[ -x "$PY" ] || PY=pytest
+
+if ! "$PY" -q >/tmp/mm_pretest.log 2>&1; then
+  tail -20 /tmp/mm_pretest.log
+  echo
+  echo "Tests failed — push blocked. Every push to main cuts a release."
+  exit 1
+fi
+echo "  $(tail -1 /tmp/mm_pretest.log)"
+
+if [ -d ui/node_modules ]; then
+  echo "moneymaker pre-push: typechecking the UI"
+  if ! (cd ui && bunx tsc --noEmit) >/tmp/mm_pretsc.log 2>&1; then
+    head -20 /tmp/mm_pretsc.log
+    echo "Typecheck failed — push blocked."
+    exit 1
+  fi
+  echo "  UI typecheck clean"
+fi

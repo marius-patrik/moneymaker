@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useResource } from "@/lib/useResource";
 import { api } from "@/lib/api";
+import { OverviewPanels } from "@/pages/OverviewPanels";
 import { fmt, fmtDollar, pnlColor } from "@/lib/utils";
 
 const ALL = "__all__";
@@ -52,6 +53,9 @@ export function Portfolio() {
           </Select>
         </div>
       </div>
+
+      {/* Account-wide performance, which used to be its own destination. */}
+      {account === ALL && <OverviewPanels />}
 
       <Panel title="Summary">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

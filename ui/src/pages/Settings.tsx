@@ -48,7 +48,7 @@ function ProviderGroup({
 
 export function Settings() {
   const { toast } = useToast();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, oled, setOled } = useTheme();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [groups, setGroups] = useState<ProviderGroups | null>(null);
   const [creds, setCreds] = useState<Record<string, Record<string, string>>>({});
@@ -154,6 +154,23 @@ export function Settings() {
                   )
                 )}
               </div>
+
+              <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border p-2.5">
+                <span className="min-w-0">
+                  <span className="block text-xs font-medium">OLED black</span>
+                  <span className="block text-[11px] leading-relaxed text-muted-foreground">
+                    True black background — unlit pixels on an OLED panel, and the
+                    deepest contrast. Applies to the dark theme only.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={oled}
+                  onChange={(e) => setOled(e.target.checked)}
+                  aria-label="OLED black"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                />
+              </label>
             </div>
 
             <div className="space-y-2 rounded-lg border p-3">

@@ -451,6 +451,18 @@ paint, so there is no flash of the wrong palette.
 `Cmd/Ctrl+B` collapses the sidebar; `Cmd/Ctrl+,` opens settings; `Esc`
 closes the mobile drawer or dialog.
 
+## Repository hooks
+
+```
+moneymaker hooks install
+```
+
+Pre-commit refuses a commit that leaves completed items in `BACKLOG.md`,
+adds an API route the README does not document, stages a credentials file
+or a hard-coded secret, or adds a `src/` module with no tests. Pre-push runs
+the suite and typechecks the UI — every push to `main` cuts a release, so a
+red suite must not get that far.
+
 ## Running as a service
 
 `moneymaker service` installs the engine as a background service — launchd

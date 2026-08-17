@@ -70,6 +70,24 @@
 
     --ambient-1: 0 0% 9%;
     --ambient-2: 0 0% 2%;
+  }
+
+  /* OLED: a true black background leaves those pixels unlit, which saves
+     power and gives the deepest possible contrast. Panels stay slightly
+     raised so the layering still reads — a wholly black interface loses
+     every edge. */
+  .dark.oled {
+    --background: 0 0% 0%;
+    --card: 0 0% 4%;
+    --popover: 0 0% 6%;
+    --secondary: 0 0% 10%;
+    --muted: 0 0% 9%;
+    --accent: 0 0% 12%;
+    --border: 0 0% 11%;
+    --input: 0 0% 13%;
+
+    --ambient-1: 0 0% 5%;
+    --ambient-2: 0 0% 0%;
 
     /* Lifted for legibility against a dark field. */
     --profit: 142 60% 50%;

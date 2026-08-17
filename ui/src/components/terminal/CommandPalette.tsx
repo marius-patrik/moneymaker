@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, CornerDownLeft } from "lucide-react";
-import { SECTIONS } from "@/components/terminal/SectionNav";
+import { SECTIONS } from "@/components/terminal/Dock";
 import { api, type QuickGroup } from "@/lib/api";
 
 interface Command {

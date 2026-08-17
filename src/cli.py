@@ -9,6 +9,7 @@ import csv
 import datetime as dt
 import json
 import os
+import pathlib
 import sys
 
 from src.accounts import AccountManager, CredentialStore
@@ -631,6 +632,28 @@ def cmd_serve(args):
                    force_build=args.force_build))
 
 
+def cmd_hooks(args):
+    """Point git at the repo's hooks, so the guards travel with the clone."""
+    import subprocess
+    root = pathlib.Path(__file__).parent.parent
+    if args.action == "install":
+        subprocess.run(["git", "config", "core.hooksPath", ".githooks"],
+                       cwd=str(root), check=True)
+        for h in (root / ".githooks").glob("*"):
+            h.chmod(0o755)
+        print("Hooks installed. Pre-commit guards docs and secrets; "
+              "pre-push runs the suite.")
+    elif args.action == "uninstall":
+        subprocess.run(["git", "config", "--unset", "core.hooksPath"],
+                       cwd=str(root), check=False)
+        print("Hooks removed.")
+    else:
+        r = subprocess.run(["git", "config", "--get", "core.hooksPath"],
+                           cwd=str(root), capture_output=True, text=True)
+        path = r.stdout.strip()
+        print(f"hooksPath = {path or '(unset — hooks are not active)'}")
+
+
 def cmd_service(args):
     from src.service import dispatch
     dispatch(args.action, get_home(args.data_dir), host=args.host,
@@ -863,6 +886,12 @@ def main():
     p_serve.add_argument("--force-build", action="store_true",
                          help="With --prod: rebuild the UI even if dist looks current.")
     p_serve.set_defaults(func=cmd_serve)
+
+    p_hooks = sub.add_parser(
+        "hooks", help="Install the repo's git hooks (doc, secret and test guards).")
+    p_hooks.add_argument("action", nargs="?", default="status",
+                         choices=["install", "uninstall", "status"])
+    p_hooks.set_defaults(func=cmd_hooks)
 
     p_svc = sub.add_parser(
         "service",
