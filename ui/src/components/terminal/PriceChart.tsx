@@ -8,6 +8,15 @@ import { fmt } from "@/lib/utils";
 import type { Candle, IndicatorSeries } from "@/lib/api";
 
 export type ChartKind = "candles" | "line";
+export type DrawTool = "none" | "hline" | "trend";
+
+export interface Drawing {
+  id: string;
+  kind: "hline" | "trend";
+  /** hline uses one point; trend uses two. */
+  points: { time: number; price: number }[];
+  color: string;
+}
 
 /** Resolve a CSS custom property to a concrete colour the canvas can use. */
 function cssVar(name: string, fallback: string): string {
@@ -34,6 +43,7 @@ const OVERLAY_COLORS = ["#f59e0b", "#38bdf8", "#a78bfa", "#f472b6"];
 
 export function PriceChart({
   candles, kind = "candles", height = 380, onHover, overlays = [],
+  drawings = [], tool = "none", onDraw, onDrawingsChange,
 }: {
   candles: Candle[];
   kind?: ChartKind;
@@ -41,8 +51,15 @@ export function PriceChart({
   onHover?: (h: Hover | null) => void;
   /** Indicator series drawn over the price pane. */
   overlays?: IndicatorSeries[];
+  /** User-drawn levels and trendlines. */
+  drawings?: Drawing[];
+  tool?: DrawTool;
+  onDraw?: (d: Drawing) => void;
+  onDrawingsChange?: (d: Drawing[]) => void;
 }) {
   const overlayRefs = useRef<ISeriesApi<"Line">[]>([]);
+  const drawRefs = useRef<ISeriesApi<"Line">[]>([]);
+  const pendingRef = useRef<{ time: number; price: number } | null>(null);
   const holder = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const priceRef = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Line"> | null>(null);
@@ -166,6 +183,72 @@ export function PriceChart({
 
     chart.timeScale().fitContent();
   }, [candles, kind]);
+
+  // Drawings. Rebuilt wholesale like overlays — the set is small and edited
+  // by hand, so reconciling identity would cost more than it saves.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    for (const s of drawRefs.current) {
+      try { chart.removeSeries(s); } catch { /* chart gone */ }
+    }
+    drawRefs.current = [];
+    if (candles.length === 0) return;
+
+    const first = candles[0].time, last = candles[candles.length - 1].time;
+    for (const d of drawings) {
+      const series = chart.addSeries(LineSeries, {
+        color: d.color, lineWidth: 1, lineStyle: d.kind === "hline" ? 2 : 0,
+        priceLineVisible: false, lastValueVisible: d.kind === "hline",
+        crosshairMarkerVisible: false,
+      });
+      // A horizontal level spans the whole visible range; a trendline runs
+      // between the two points that defined it.
+      const pts = d.kind === "hline"
+        ? [{ time: first as Time, value: d.points[0].price },
+           { time: last as Time, value: d.points[0].price }]
+        : d.points
+            .slice()
+            .sort((a, b) => a.time - b.time)
+            .map((p) => ({ time: p.time as Time, value: p.price }));
+      series.setData(pts);
+      drawRefs.current.push(series);
+    }
+  }, [drawings, candles, kind, theme]);
+
+  // Placing a drawing: one click for a level, two for a trendline.
+  useEffect(() => {
+    const chart = chartRef.current, price = priceRef.current;
+    if (!chart || !price || tool === "none" || !onDraw) {
+      pendingRef.current = null;
+      return;
+    }
+
+    const handler = (param: Parameters<Parameters<IChartApi["subscribeClick"]>[0]>[0]) => {
+      if (!param.time || !param.point) return;
+      const value = price.coordinateToPrice(param.point.y);
+      if (value == null) return;
+      const point = { time: Number(param.time), price: Number(value) };
+
+      if (tool === "hline") {
+        onDraw({ id: `d${Date.now()}`, kind: "hline", points: [point], color: "#eab308" });
+        return;
+      }
+      if (!pendingRef.current) {
+        pendingRef.current = point;   // first click anchors the line
+        return;
+      }
+      onDraw({
+        id: `d${Date.now()}`, kind: "trend",
+        points: [pendingRef.current, point], color: "#38bdf8",
+      });
+      pendingRef.current = null;
+    };
+
+    chart.subscribeClick(handler);
+    return () => chart.unsubscribeClick(handler);
+  }, [tool, onDraw, candles]);
 
   // Crosshair readout, so the numbers under the cursor are legible.
   useEffect(() => {

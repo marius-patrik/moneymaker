@@ -49,6 +49,10 @@ class ServerState:
         self.missed_triggers: list[dict] = []
         self.last_tick_count = 0
         self.recorded_instruments = 0
+        self.previous_prices: dict[str, float] = {}
+        # Recently fired alerts, so the UI can surface them once even if the
+        # user was on another page when they triggered.
+        self.fired_alerts: list[dict] = []
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +133,14 @@ class EvolveBody(BaseModel):
     start_params: Optional[dict[str, Any]] = None
 
 
+class AlertBody(BaseModel):
+    ticker: str
+    level: float
+    condition: str = "above"
+    note: str = ""
+    repeat: bool = False
+
+
 class TickWatchBody(BaseModel):
     instruments: list[str]
 
@@ -151,7 +163,9 @@ class PendingOrderBody(BaseModel):
 class ManualOrderBody(BaseModel):
     ticker: str
     direction: str                     # "long" | "short"
-    size: float
+    # Either a unit size, or a cash amount to convert at the fill price.
+    size: Optional[float] = None
+    notional: Optional[float] = None
     account_id: Optional[str] = None
     provider: str = "simulated"
     closing: bool = False
@@ -1135,8 +1149,12 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         """
         if body.direction not in ("long", "short"):
             raise HTTPException(400, "direction must be 'long' or 'short'")
-        if body.size <= 0:
+        if (body.size is None) == (body.notional is None):
+            raise HTTPException(400, "give either size or notional, not both")
+        if body.size is not None and body.size <= 0:
             raise HTTPException(400, "size must be positive")
+        if body.notional is not None and body.notional <= 0:
+            raise HTTPException(400, "notional must be positive")
 
         provider = make_provider(body.provider, state.home)
         account_id = _resolve_account(provider, body.account_id, 10000.0)
@@ -1147,9 +1165,15 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             prov = make_data_provider(body.data_provider, state.home)
             price, _ = prov.get_last_price(body.ticker)
 
+        # "Invest $500" is more natural than "buy 0.1122 units", so the cash
+        # amount is converted once the price is known.
+        size = body.size if body.size is not None else round(body.notional / price, 6)
+        if size <= 0:
+            raise HTTPException(400, f"{body.notional} is too small to buy any {body.ticker}")
+
         result = provider.execute_order(
             account_id=account_id, ticker=body.ticker, direction=body.direction,
-            size=body.size, reference_price=price, timestamp=dt.datetime.now(),
+            size=size, reference_price=price, timestamp=dt.datetime.now(),
             closing=body.closing,
         )
         fill = getattr(result, "fill_price", price)
@@ -1165,7 +1189,7 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         from src.book import ManualBook
         pos = ManualBook(state.home).open(
             account_id=account_id, ticker=body.ticker, direction=body.direction,
-            size=body.size, price=fill,
+            size=size, price=fill,
         )
         # Protective exits are placed against the new position, so closing it
         # by hand takes them with it.
@@ -1178,7 +1202,7 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             if trigger:
                 attached.append(book.place(
                     account_id=account_id, ticker=body.ticker,
-                    direction=closing_side, size=body.size,
+                    direction=closing_side, size=size,
                     order_type=kind, trigger_price=trigger,
                     position_id=pos["id"],
                 ))
@@ -1189,7 +1213,7 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             "account_id": account_id,
             "ticker": body.ticker,
             "direction": body.direction,
-            "size": body.size,
+            "size": size,
             "fill_price": fill,
             "balance": provider.get_account_balance(account_id),
         }
@@ -1716,6 +1740,17 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
                 prices = prov.get_last_prices(sorted(watched))
                 state.last_tick_count = ticks.record_batch(prices)
                 state.recorded_instruments = len(prices)
+
+                # Alerts are the same trigger test as an order, minus the
+                # fill, so they ride the sweep that already has the prices.
+                from src.alerts import AlertStore
+                fired = AlertStore(state.home).check(prices, state.previous_prices)
+                if fired:
+                    state.fired_alerts = (fired + state.fired_alerts)[:50]
+                    for a in fired:
+                        log.info("alert %s: %s %s %s at %s", a["id"], a["ticker"],
+                                 a["condition"], a["level"], a["fired_price"])
+                state.previous_prices = prices
             except Exception as e:
                 log.warning("tick batch failed: %s", e)
 
@@ -1835,6 +1870,53 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         n = len(state.missed_triggers)
         state.missed_triggers = []
         return {"dismissed": n}
+
+    # ---- alerts ----
+
+    @api.get("/alerts")
+    def list_alerts(ticker: Optional[str] = None, armed_only: bool = False):
+        from src.alerts import CONDITIONS, AlertStore
+        return {
+            "alerts": AlertStore(state.home).list(ticker, include_fired=not armed_only),
+            "conditions": [{"kind": k, "description": v} for k, v in CONDITIONS.items()],
+            "recently_fired": state.fired_alerts[:10],
+        }
+
+    @api.post("/alerts")
+    def create_alert(body: AlertBody):
+        from src.alerts import AlertStore
+        from src.ticks import TickStore
+        try:
+            alert = AlertStore(state.home).create(
+                ticker=body.ticker, level=body.level, condition=body.condition,
+                note=body.note, repeat=body.repeat)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        # An alert on an instrument nobody polls would never fire.
+        TickStore(state.home).enroll(body.ticker)
+        return alert
+
+    @api.delete("/alerts/{alert_id}")
+    def delete_alert(alert_id: str):
+        from src.alerts import AlertStore
+        try:
+            return AlertStore(state.home).delete(alert_id)
+        except KeyError:
+            raise HTTPException(404, "unknown alert")
+
+    @api.post("/alerts/{alert_id}/rearm")
+    def rearm_alert(alert_id: str):
+        from src.alerts import AlertStore
+        try:
+            return AlertStore(state.home).rearm(alert_id)
+        except KeyError:
+            raise HTTPException(404, "unknown alert")
+
+    @api.post("/alerts/acknowledge")
+    def acknowledge_alerts():
+        n = len(state.fired_alerts)
+        state.fired_alerts = []
+        return {"acknowledged": n}
 
     # ---- recorded ticks ----
 

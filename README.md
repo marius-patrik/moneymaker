@@ -344,6 +344,14 @@ POST /api/orders/pending  {ticker, direction, size, order_type, trigger_price}
 DELETE /api/orders/pending/<id>
 GET  /api/orders/monitor       whether resting orders are being watched
 GET  /api/news?q=              headlines for a topic or ticker
+GET  /api/alerts               price alerts    POST /api/alerts
+DELETE /api/alerts/<id>        POST /api/alerts/<id>/rearm
+GET  /api/ticks/stats          what has been recorded
+GET  /api/ticks/<ticker>       recorded ticks as OHLC bars
+GET  /api/ticks/watch          PUT to set what is recorded continuously
+GET  /api/orders/missed        triggers reached while nothing was watching
+POST /api/orders/missed/<id>/fill   POST /api/orders/missed/dismiss
+POST /api/alerts/acknowledge   clear the fired-alert banner
 GET  /api/quick-search?q=      instruments, systems, accounts and runs at once
 GET  /api/quote/<ticker>       last price
 GET  /api/search?q=           instrument search

@@ -95,6 +95,19 @@ export interface Instrument {
   note?: string;
 }
 
+export interface Alert {
+  id: string;
+  ticker: string;
+  level: number;
+  condition: string;
+  note: string;
+  repeat: boolean;
+  status: "armed" | "fired";
+  created_at: string;
+  fired_at: string | null;
+  fired_price: number | null;
+}
+
 export interface PendingOrder {
   id: string;
   account_id: string;
@@ -431,7 +444,9 @@ export const api = {
   },
   orders: {
     place: (body: {
-      ticker: string; direction: "long" | "short"; size: number;
+      ticker: string; direction: "long" | "short";
+      /** Give one or the other — units, or the cash to convert at fill. */
+      size?: number; notional?: number;
       account_id?: string; closing?: boolean; reference_price?: number;
       stop_loss?: number; take_profit?: number;
     }) => post<{ position_id: string; attached_orders: string[];
@@ -456,6 +471,16 @@ export const api = {
         `/news?q=${encodeURIComponent(q)}&limit=${limit}`),
     quickSearch: (q: string) =>
       get<{ groups: QuickGroup[] }>(`/quick-search?q=${encodeURIComponent(q)}`),
+    alerts: (ticker?: string) =>
+      get<{ alerts: Alert[]; conditions: { kind: string; description: string }[];
+            recently_fired: Alert[] }>(
+        `/alerts${ticker ? `?ticker=${encodeURIComponent(ticker)}` : ""}`),
+    createAlert: (body: { ticker: string; level: number; condition: string;
+                          note?: string; repeat?: boolean }) =>
+      post<Alert>("/alerts", body),
+    deleteAlert: (id: string) => del<Alert>(`/alerts/${id}`),
+    rearmAlert: (id: string) => post<Alert>(`/alerts/${id}/rearm`, {}),
+    acknowledgeAlerts: () => post<{ acknowledged: number }>("/alerts/acknowledge", {}),
     indicators: () => get<{ indicators: IndicatorMeta[] }>("/indicators"),
     indicator: (kind: string, ticker: string, period: number,
                 interval: string, days: number) =>

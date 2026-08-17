@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Loader2, Star, CandlestickChart, LineChart } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Loader2, Star, CandlestickChart, LineChart,
+         Minus, TrendingUp, Eraser } from "lucide-react";
 import { Panel, Stat } from "@/components/terminal/Panel";
 import { EmptyState, ErrorState } from "@/components/terminal/States";
 import { TickerSearch } from "@/components/terminal/TickerSearch";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/lib/useResource";
-import { PriceChart, OhlcReadout, type ChartKind } from "@/components/terminal/PriceChart";
+import { PriceChart, OhlcReadout, type ChartKind, type DrawTool, type Drawing }
+  from "@/components/terminal/PriceChart";
+import { AlertsPanel } from "@/components/terminal/AlertsPanel";
 import { PositionsPanel } from "@/components/terminal/PositionsPanel";
 import { PendingOrdersPanel } from "@/components/terminal/PendingOrdersPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,6 +26,7 @@ import { cn, fmt, fmtDollar, fmtPct } from "@/lib/utils";
 const WATCH_KEY = "mm.watchlist";
 const TICKER_KEY = "mm.ticker";
 const IND_KEY = "mm.indicators";
+const DRAW_KEY = "mm.drawings";
 const DEFAULT_WATCH = ["GC=F", "ES=F", "NQ=F", "CL=F", "SPY"];
 
 /** Interval paired with a lookback that yields a useful number of bars. */
@@ -92,6 +97,11 @@ export function Trade() {
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
   const [ordNonce, setOrdNonce] = useState(0);
+  const [tool, setTool] = useState<DrawTool>("none");
+  const [drawings, setDrawings] = useState<Record<string, Drawing[]>>(() => {
+    try { return JSON.parse(localStorage.getItem(DRAW_KEY) ?? "{}"); } catch { return {}; }
+  });
+  const [sizeMode, setSizeMode] = useState<"units" | "cash">("units");
   const [accountId, setAccountId] = useState("");
   const [placing, setPlacing] = useState<"long" | "short" | null>(null);
   const [posNonce, setPosNonce] = useState(0);
@@ -111,6 +121,8 @@ export function Trade() {
   useEffect(() => { localStorage.setItem(WATCH_KEY, JSON.stringify(watch)); }, [watch]);
   useEffect(() => { localStorage.setItem(TICKER_KEY, ticker); }, [ticker]);
   useEffect(() => { localStorage.setItem(IND_KEY, JSON.stringify(indicators)); }, [indicators]);
+  // Drawings are per instrument — a level on gold means nothing on the S&P.
+  useEffect(() => { localStorage.setItem(DRAW_KEY, JSON.stringify(drawings)); }, [drawings]);
 
   // Indicators follow the chart: same instrument, same timeframe.
   useEffect(() => {
@@ -137,7 +149,10 @@ export function Trade() {
     try {
       if (orderKind === "market") {
         const r = await api.orders.place({
-          ticker, direction, size: Number(size), account_id: accountId || undefined,
+          ticker, direction, account_id: accountId || undefined,
+          ...(sizeMode === "units"
+            ? { size: Number(size) }
+            : { notional: Number(size) }),
           stop_loss: stopLoss ? Number(stopLoss) : undefined,
           take_profit: takeProfit ? Number(takeProfit) : undefined,
         });
@@ -169,7 +184,12 @@ export function Trade() {
   const last = d?.last ?? null;
   const up = (d?.change ?? 0) >= 0;
   const acct = (accounts.data?.accounts ?? []).find((a) => a.account_id === accountId);
-  const notional = last != null ? last * Number(size || 0) : null;
+  const notional = sizeMode === "cash"
+    ? Number(size || 0)
+    : last != null ? last * Number(size || 0) : null;
+  const units = sizeMode === "cash" && last
+    ? Number(size || 0) / last
+    : Number(size || 0);
 
   return (
     <Tabs defaultValue="manual" className="flex h-full min-h-0 flex-col">
@@ -215,6 +235,28 @@ export function Trade() {
           <Panel title={ticker}
                  actions={
                    <div className="flex items-center gap-1">
+                     <div className="flex rounded-md bg-muted/70 p-0.5">
+                       {([
+                         { t: "hline" as const, icon: Minus, label: "Horizontal level" },
+                         { t: "trend" as const, icon: TrendingUp, label: "Trendline" },
+                       ]).map(({ t, icon: Icon, label }) => (
+                         <button key={t}
+                                 onClick={() => setTool((c) => (c === t ? "none" : t))}
+                                 aria-label={label} title={label}
+                                 className={cn("rounded p-1 transition-colors",
+                                   tool === t ? "bg-background text-foreground shadow-sm"
+                                              : "text-muted-foreground hover:text-foreground")}>
+                           <Icon className="h-3.5 w-3.5" />
+                         </button>
+                       ))}
+                       {(drawings[ticker]?.length ?? 0) > 0 && (
+                         <button onClick={() => setDrawings((d) => ({ ...d, [ticker]: [] }))}
+                                 aria-label="Clear drawings" title="Clear drawings"
+                                 className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive">
+                           <Eraser className="h-3.5 w-3.5" />
+                         </button>
+                       )}
+                     </div>
                      <IndicatorPicker active={indicators} onChange={setIndicators} />
                      <div className="flex rounded-md bg-muted/70 p-0.5">
                        {TIMEFRAMES.map((t) => (
@@ -254,7 +296,14 @@ export function Trade() {
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
                 : d && d.candles.length > 1
                   ? <PriceChart candles={d.candles} kind={kind} height={380}
-                                onHover={setHover} overlays={series} />
+                                onHover={setHover} overlays={series}
+                                drawings={drawings[ticker] ?? []} tool={tool}
+                                onDraw={(dr) => {
+                                  setDrawings((prev) => ({
+                                    ...prev, [ticker]: [...(prev[ticker] ?? []), dr],
+                                  }));
+                                  setTool("none");   // one shape per selection
+                                }} />
                   : <div className="h-[380px]"><EmptyState title="No price data"
                       hint={`Nothing returned for ${ticker} at ${tf.label}.`} /></div>}
             </div>
@@ -272,7 +321,20 @@ export function Trade() {
                 ))}
               </div>
 
-              <Field label="Size" type="number" value={size} onValueChange={setSize} />
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="ticket-size" className="text-xs">
+                    {sizeMode === "units" ? "Size" : "Amount (USD)"}
+                  </Label>
+                  <button onClick={() => setSizeMode((m) => (m === "units" ? "cash" : "units"))}
+                          className="text-[10px] text-muted-foreground hover:text-foreground">
+                    {sizeMode === "units" ? "use amount" : "use units"}
+                  </button>
+                </div>
+                <Input id="ticket-size" type="number" value={size}
+                       onChange={(e) => setSize(e.target.value)}
+                       className="h-8 text-sm" />
+              </div>
 
               {orderKind !== "market" && (
                 <Field
@@ -304,6 +366,12 @@ export function Trade() {
                   <span className="text-muted-foreground">Notional</span>
                   <span className="font-mono tabular-nums">
                     {notional != null ? fmtDollar(notional) : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Units</span>
+                  <span className="font-mono tabular-nums">
+                    {Number.isFinite(units) ? fmt(units, 4) : "—"}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -342,6 +410,7 @@ export function Trade() {
                             onChanged={() => { accounts.reload(); setPosNonce((n) => n + 1); }} />
             <PendingOrdersPanel accountId={accountId || undefined} refreshKey={ordNonce}
                                 onChanged={() => setOrdNonce((n) => n + 1)} />
+            <AlertsPanel ticker={ticker} lastPrice={last} />
           </div>
         </div>
       </div>

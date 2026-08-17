@@ -17,9 +17,9 @@ interaction model is theirs rather than an imitation.
 | Scroll to zoom, drag to pan, axis stretch | ✅ |
 | Timeframes 5m / 15m / 1h / 1d / 1wk | ✅ |
 | Theme-aware, redraws on theme change | ✅ |
-| Drawing tools (trendlines, fib) | ❌ not built |
+| Drawing tools (levels, trendlines) | ✅ |
 | Indicator overlays (SMA, EMA, VWAP, RSI) | ✅ added after this audit |
-| Price alerts | ❌ not built |
+| Price alerts | ✅ |
 | News feed | ✅ added |
 | Compare instruments on one chart | ❌ not built |
 
@@ -28,8 +28,8 @@ and RSI, computed server-side from the same candles the chart draws, so the
 overlay and the strategies read one implementation rather than two that
 drift. Selection persists per browser.
 
-The remaining three are discretionary-charting conveniences. None blocks the
-product's purpose, which is automated systems.
+Remaining: fibonacci and channel tools, and comparing two instruments on one
+chart. Both are discretionary-charting conveniences.
 
 ## Trading (Trading212)
 
@@ -46,7 +46,7 @@ product's purpose, which is automated systems.
 | Realised **and** unrealised in headline totals | ✅ (fixed in this audit) |
 | Limit / stop orders | ✅ |
 | Stop-loss and take-profit attached at entry | ✅ |
-| Fractional-size helper ("invest $X") | ❌ not built |
+| Fractional sizing ("invest $X") | ✅ |
 
 Order types are done. Resting orders live in `src/orders.py` and a monitor
 sweeps every 20s — timer-driven rather than streamed, because the free data
@@ -55,8 +55,8 @@ would re-read the same quote. Protective exits are attached to the position
 they guard and cancelled with it, since a stop-loss outliving its position
 would open a new one in the opposite direction.
 
-The remaining gap is fractional sizing ("invest $X"), which is arithmetic on
-top of what exists rather than new machinery.
+Trading is at parity for what this product does. What Trading212 has and we
+do not is a real broker behind it — deliberately absent.
 
 ## Added after this audit
 
@@ -81,3 +81,13 @@ top of what exists rather than new machinery.
 - Real-money brokers. Every execution path refuses a live provider; enabling
   one is a separate, explicit decision.
 - Level 2 / order book depth — not available from the free data providers.
+
+
+## Data (added 2026-08-17)
+
+We record our own ticks. yfinance's finest history is 1-minute bars, so the
+order monitor's polls are persisted: instruments enrol themselves when
+charted, traded or backtested, quotes are fetched in one batched request, and
+repeated prices are dropped because only moves are ticks. Recorded ticks
+aggregate into OHLC bars at resolutions the provider does not offer, which is
+the only route to backtests finer than a minute.
