@@ -21,6 +21,12 @@ from pydantic import BaseModel
 from src.accounts import AccountManager, CredentialStore
 
 log = logging.getLogger(__name__)
+
+# How often resting orders, alerts and ticks are swept. Deliberately
+# unhurried: the free providers throttle, and a throttled key stops serving
+# charts as well as quotes, so being greedy here breaks the whole app.
+BASE_SWEEP_SECONDS = 60
+MAX_SWEEP_SECONDS = 900
 from src.data import DataFeed
 from src.engine import Simulator
 from src.jobs import JobManager
@@ -50,6 +56,7 @@ class ServerState:
         self.last_tick_count = 0
         self.recorded_instruments = 0
         self.previous_prices: dict[str, float] = {}
+        self.sweep_interval = BASE_SWEEP_SECONDS
         # Recently fired alerts, so the UI can surface them once even if the
         # user was on another page when they triggered.
         self.fired_alerts: list[dict] = []
@@ -87,6 +94,10 @@ class BacktestBody(BaseModel):
     params: dict[str, Any] = {}
     data_provider: str = "yfinance"
     data_provider_path: Optional[str] = None
+    # Provider bars are aggregated elsewhere, revised after the fact, and
+    # delayed — a fill at "the low of the bar" may be a price that never
+    # traded while we were watching. Recorded ticks are what we observed.
+    require_ticks: bool = True
 
 
 class LiveStartBody(BaseModel):
@@ -167,6 +178,10 @@ class ManualOrderBody(BaseModel):
     size: Optional[float] = None
     notional: Optional[float] = None
     account_id: Optional[str] = None
+    # "All accounts" places the same order on every one of them. Explicit
+    # rather than implied by a missing account_id, which already means
+    # "pick the first".
+    all_accounts: bool = False
     provider: str = "simulated"
     closing: bool = False
     reference_price: Optional[float] = None   # omitted → fetch the last price
@@ -732,6 +747,22 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         strategy_cls = strategies.get(body.strategy)
         if not strategy_cls:
             raise HTTPException(400, f"unknown strategy: {body.strategy}")
+        from src.coverage import assess
+        from src.ticks import TickStore
+        verdict = assess(TickStore(state.home), body.ticker, body.start, body.end,
+                         requested="ticks" if body.require_ticks else "provider")
+        if body.require_ticks and not verdict["trustworthy"]:
+            # Refused rather than quietly downgraded: a result computed from
+            # provider bars looks identical to a real one, which is worse
+            # than no result at all.
+            raise HTTPException(422, {
+                "error": "insufficient tick coverage",
+                "detail": verdict["reason"],
+                "coverage": verdict["coverage"],
+                "hint": ("Pass require_ticks=false to run on provider bars, "
+                         "understanding the result is indicative only."),
+            })
+
         from src.data_providers import make_data_provider
         kwargs = {"path": body.data_provider_path} if body.data_provider_path else {}
         data_prov = make_data_provider(body.data_provider, state.home, **kwargs)
@@ -750,7 +781,8 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         logger = TradeLogger(state.home, f"backtest_{body.strategy}_{ts}")
         sim = Simulator(strategy, provider, account_id, risk, logger, ticker=body.ticker)
         sim.run_backtest(df)
-        return {"session_name": logger.session_name, "account_id": account_id, **_status_payload(sim)}
+        return {"session_name": logger.session_name, "account_id": account_id,
+                "provenance": verdict, **_status_payload(sim)}
 
     # ---- backtest-multi ----
 
@@ -1157,7 +1189,14 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             raise HTTPException(400, "notional must be positive")
 
         provider = make_provider(body.provider, state.home)
-        account_id = _resolve_account(provider, body.account_id, 10000.0)
+
+        if body.all_accounts:
+            targets = [a.account_id for a in AccountManager(state.home).list()]
+            if not targets:
+                raise HTTPException(400, "no accounts to trade")
+        else:
+            targets = [_resolve_account(provider, body.account_id, 10000.0)]
+        account_id = targets[0]
 
         price = body.reference_price
         if price is None:
@@ -1171,12 +1210,18 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         if size <= 0:
             raise HTTPException(400, f"{body.notional} is too small to buy any {body.ticker}")
 
-        result = provider.execute_order(
-            account_id=account_id, ticker=body.ticker, direction=body.direction,
-            size=size, reference_price=price, timestamp=dt.datetime.now(),
-            closing=body.closing,
-        )
-        fill = getattr(result, "fill_price", price)
+        # One fill per account. The same size on each, because "invest this
+        # much in each account" is what a fan-out order means — scaling by
+        # balance would be a different feature with different risk.
+        fills = []
+        for target in targets:
+            result = provider.execute_order(
+                account_id=target, ticker=body.ticker, direction=body.direction,
+                size=size, reference_price=price, timestamp=dt.datetime.now(),
+                closing=body.closing,
+            )
+            fills.append((target, getattr(result, "fill_price", price)))
+        fill = fills[0][1]
 
         # A fill that leaves no record is invisible afterwards, which is why
         # placing an order used to look like nothing happened.
@@ -1187,10 +1232,13 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             pass
 
         from src.book import ManualBook
-        pos = ManualBook(state.home).open(
-            account_id=account_id, ticker=body.ticker, direction=body.direction,
-            size=size, price=fill,
-        )
+        mbook = ManualBook(state.home)
+        positions = [
+            mbook.open(account_id=target, ticker=body.ticker,
+                       direction=body.direction, size=size, price=px)
+            for target, px in fills
+        ]
+        pos = positions[0]
         # Protective exits are placed against the new position, so closing it
         # by hand takes them with it.
         from src.orders import OrderBook
@@ -1209,6 +1257,8 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
 
         return {
             "position_id": pos["id"],
+            "position_ids": [p["id"] for p in positions],
+            "accounts": [t for t, _ in fills],
             "attached_orders": [o["id"] for o in attached],
             "account_id": account_id,
             "ticker": body.ticker,
@@ -1533,6 +1583,18 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
             "gross_loss": round(sum(losses), 2),
         }
 
+    @api.get("/coverage/{ticker:path}")
+    def get_coverage(ticker: str, start: str, end: str):
+        """
+        Whether a window can be backtested on our own ticks.
+
+        Asked before running, so the UI can say what is possible rather than
+        offering a run that will be refused.
+        """
+        from src.coverage import assess
+        from src.ticks import TickStore
+        return assess(TickStore(state.home), ticker, start, end)
+
     @api.get("/stats")
     def get_stats():
         """
@@ -1738,6 +1800,12 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         if watched:
             try:
                 prices = prov.get_last_prices(sorted(watched))
+                # An empty batch from a non-empty request means the provider
+                # is refusing us, not that the market vanished.
+                if not prices:
+                    raise RuntimeError(
+                        f"no prices returned for {len(watched)} instruments — "
+                        "the provider is likely throttling")
                 state.last_tick_count = ticks.record_batch(prices)
                 state.recorded_instruments = len(prices)
 
@@ -1786,15 +1854,30 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
                 book.remove(order["id"])
 
     def _monitor_loop() -> None:
-        while not state.monitor_stop.wait(20):
+        """
+        Poll on a schedule that the free provider will actually tolerate.
+
+        yfinance publishes no rate limit but throttles empirically, and a
+        throttled account stops serving charts too — so the recorder must
+        never be greedy enough to break the rest of the app. The interval
+        widens on failure and recovers on success.
+        """
+        while not state.monitor_stop.wait(state.sweep_interval):
             try:
                 _sweep_orders()
                 state.last_sweep = dt.datetime.now().isoformat(timespec="seconds")
                 state.sweep_error = None
+                # Ease back toward the base rate rather than snapping to it.
+                if state.sweep_interval > BASE_SWEEP_SECONDS:
+                    state.sweep_interval = max(BASE_SWEEP_SECONDS,
+                                               int(state.sweep_interval * 0.7))
             except Exception as e:
-                # The monitor must outlive a bad quote or a missing provider.
                 state.sweep_error = f"{type(e).__name__}: {e}"
-                log.exception("order sweep failed")
+                state.sweep_interval = min(MAX_SWEEP_SECONDS,
+                                           max(BASE_SWEEP_SECONDS,
+                                               int(state.sweep_interval * 2)))
+                log.warning("order sweep failed (%s); backing off to %ss",
+                            e, state.sweep_interval)
 
     # Orders the market reached while we were not watching. Reported rather
     # than silently filled: the user decides whether a missed fill is real.
@@ -1962,7 +2045,7 @@ def make_app(home: str, ui_dist: Optional[pathlib.Path] = None) -> FastAPI:
         from src.orders import OrderBook
         return {
             "running": not state.monitor_stop.is_set(),
-            "interval_seconds": 20,
+            "interval_seconds": state.sweep_interval,
             "last_sweep": state.last_sweep,
             "error": state.sweep_error,
             "working_orders": len(OrderBook(state.home).list()),

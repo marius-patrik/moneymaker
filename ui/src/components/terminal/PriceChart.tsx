@@ -206,6 +206,7 @@ export function PriceChart({
       // A horizontal level spans the whole visible range; a trendline runs
       // between the two points that defined it.
       const pts = d.kind === "hline"
+        // A level has no time of its own — it spans whatever is visible.
         ? [{ time: first as Time, value: d.points[0].price },
            { time: last as Time, value: d.points[0].price }]
         : d.points

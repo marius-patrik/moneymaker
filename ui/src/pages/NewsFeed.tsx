@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { motion } from "motion/react";
-import { ExternalLink, Newspaper, Search } from "lucide-react";
+import { ExternalLink, Newspaper } from "lucide-react";
 import { Panel } from "@/components/terminal/Panel";
 import { SkeletonRows, ErrorState, EmptyState } from "@/components/terminal/States";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useResource } from "@/lib/useResource";
 import { api } from "@/lib/api";
@@ -28,29 +27,19 @@ function ago(iso: string): string {
  * around it. Headlines are read-only — nothing here feeds a strategy, which
  * is deliberate: sentiment is not something the engine acts on.
  */
-export function News() {
+export function NewsFeed() {
   const [topic, setTopic] = useState("markets");
-  const [draft, setDraft] = useState("");
   const news = useResource(() => api.orders.news(topic, 30), [topic],
                            { pollMs: 300000 });
 
   const items = news.data?.items ?? [];
 
   return (
-    <div className="space-y-3 p-3 sm:p-4">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <form
-          onSubmit={(e) => { e.preventDefault(); if (draft.trim()) setTopic(draft.trim()); }}
-          className="relative w-full max-w-64"
-        >
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={draft} onChange={(e) => setDraft(e.target.value)}
-                 aria-label="Search news" placeholder="Search a topic or ticker…"
-                 className="h-8 pl-8 text-sm" />
-        </form>
         <div className="flex flex-wrap gap-1">
           {TOPICS.map((t) => (
-            <button key={t} onClick={() => { setTopic(t); setDraft(""); }}
+            <button key={t} onClick={() => setTopic(t)}
                     className={cn("rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
                       topic === t ? "bg-primary text-primary-foreground"
                                   : "text-muted-foreground hover:bg-accent hover:text-foreground")}>

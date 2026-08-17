@@ -160,10 +160,40 @@ def test_bad_input_is_a_json_400_not_an_opaque_500(client):
         "ticker": "NOT_A_REAL_TICKER_XYZ",
         "start": "2025-01-01", "end": "2025-02-01", "interval": "1d",
         "data_provider": "csv",           # no path → ValueError, no network
+        # Otherwise the tick-coverage gate refuses first, which is a
+        # different check with its own test below.
+        "require_ticks": False,
     })
     assert r.status_code == 400
     assert r.headers["content-type"].startswith("application/json")
     assert r.json()["detail"]             # a message the UI can surface
+
+
+def test_a_backtest_without_ticks_is_refused_not_silently_downgraded(client):
+    """
+    A result computed from provider bars looks identical to one computed
+    from our own ticks, which makes a silent downgrade worse than a refusal.
+    """
+    r = client.post("/api/backtest", json={
+        "strategy": "trend_momentum", "ticker": "GC=F",
+        "start": "2020-01-01", "end": "2020-02-01", "interval": "1d",
+    })
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert detail["error"] == "insufficient tick coverage"
+    assert detail["coverage"]["covered"] == 0
+    # The refusal must say how to proceed deliberately.
+    assert "require_ticks" in detail["hint"]
+
+
+def test_coverage_can_be_checked_before_running(client):
+    r = client.get("/api/coverage/GC=F", params={"start": "2020-01-01",
+                                                 "end": "2020-02-01"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["trustworthy"] is False
+    assert body["source"] == "provider"
+    assert body["coverage"]["expected"] > 0        # weekdays were counted
 
 
 def test_malformed_body_is_rejected_with_422(client):

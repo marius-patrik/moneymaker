@@ -1,71 +1,77 @@
 import { useEffect, useState } from "react";
-import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
 import { Dock } from "@/components/terminal/Dock";
 import { TopBar } from "@/components/terminal/TopBar";
-import { CommandPalette } from "@/components/terminal/CommandPalette";
+import { InlineSearchResults } from "@/components/terminal/InlineSearchResults";
+import { useView, type View } from "@/lib/useView";
 import { Trade } from "@/pages/Trade";
 import { Portfolio } from "@/pages/Portfolio";
-import { News } from "@/pages/News";
+import { History } from "@/pages/History";
+import { Research } from "@/pages/Research";
 import { Settings } from "@/pages/Settings";
 
-function PageTransition({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      transition={{ duration: 0.12 }}
-      className="h-full min-h-0 overflow-y-auto"
-    >
-      {children}
-    </motion.div>
-  );
-}
+const SCREENS: Record<View, () => JSX.Element> = {
+  trade: Trade,
+  portfolio: Portfolio,
+  history: History,
+  research: Research,
+  settings: Settings,
+};
 
 export function App() {
-  const location = useLocation();
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const { view, setView } = useView();
+  const [inlineOpen, setInlineOpen] = useState(false);
+  const [inlineQuery, setInlineQuery] = useState("");
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault(); setPaletteOpen((v) => !v);
+        e.preventDefault(); setInlineOpen((v) => !v);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const routes: [string, React.ReactNode][] = [
-    ["/trade", <Trade />],
-    ["/portfolio", <Portfolio />],
-    ["/news", <News />],
-    ["/settings", <Settings />],
-  ];
+  // Changing screen should not leave the phone search open behind it.
+  useEffect(() => { setInlineOpen(false); setInlineQuery(""); }, [view]);
+
+  const Screen = SCREENS[view];
 
   return (
     <ToastProvider>
       <TooltipProvider delayDuration={200}>
         <div className="flex h-dvh flex-col overflow-hidden">
-          <TopBar onOpenPalette={() => setPaletteOpen(true)} />
+          <TopBar />
 
-          <main className="min-h-0 flex-1 overflow-hidden">
+          {/* Bottom padding clears the floating dock. */}
+          <main className="min-h-0 flex-1 overflow-hidden pb-24">
             <AnimatePresence mode="wait">
-              <Routes location={location} key={location.pathname}>
-                <Route path="/" element={<Navigate to="/trade" replace />} />
-                {routes.map(([path, el]) => (
-                  <Route key={path} path={path}
-                         element={<PageTransition>{el}</PageTransition>} />
-                ))}
-              </Routes>
+              <motion.div
+                key={view}
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                transition={{ duration: 0.12 }}
+                className="h-full min-h-0 overflow-y-auto"
+              >
+                <Screen />
+              </motion.div>
             </AnimatePresence>
           </main>
 
-          {/* One navigation component at every width. */}
-          <Dock onOpenSearch={() => setPaletteOpen(true)} />
+          <InlineSearchResults open={inlineOpen} query={inlineQuery}
+                               onClose={() => setInlineOpen(false)} />
 
-          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+          <Dock
+            view={view}
+            onSelect={setView}
+            onInlineSearch={setInlineOpen}
+            inlineQuery={inlineQuery}
+            onInlineQuery={setInlineQuery}
+            inlineOpen={inlineOpen}
+          />
+
         </div>
       </TooltipProvider>
     </ToastProvider>

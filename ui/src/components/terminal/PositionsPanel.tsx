@@ -5,7 +5,7 @@ import { Panel, DataTable, Stat } from "@/components/terminal/Panel";
 import { EmptyState, ErrorState, SkeletonRows } from "@/components/terminal/States";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { TradeDetail } from "@/components/terminal/TradeDetail";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/lib/useResource";
 import { api, type PositionRow } from "@/lib/api";
@@ -150,15 +150,12 @@ export function PositionsPanel({
             )}
       </Panel>
 
-      <Dialog open={!!inspect} onOpenChange={(v) => !v && setInspect(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Position</DialogTitle></DialogHeader>
-          {inspect && (
-            <PositionDetail id={inspect}
-                            onClosed={() => { setInspect(null); positions.reload(); onChanged?.(); }} />
-          )}
-        </DialogContent>
-      </Dialog>
+      <TradeDetail
+        trade={rows.find((r) => r.id === inspect) ?? null}
+        open={!!inspect}
+        onOpenChange={(v) => !v && setInspect(null)}
+        onClosed={() => { setInspect(null); positions.reload(); onChanged?.(); }}
+      />
     </>
   );
 }

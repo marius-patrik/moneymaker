@@ -447,11 +447,13 @@ export const api = {
       ticker: string; direction: "long" | "short";
       /** Give one or the other — units, or the cash to convert at fill. */
       size?: number; notional?: number;
-      account_id?: string; closing?: boolean; reference_price?: number;
+      account_id?: string; all_accounts?: boolean;
+      closing?: boolean; reference_price?: number;
       stop_loss?: number; take_profit?: number;
-    }) => post<{ position_id: string; attached_orders: string[];
-                 account_id: string; ticker: string; direction: string;
-                 size: number; fill_price: number; balance: number }>("/orders", body),
+    }) => post<{ position_id: string; position_ids: string[]; accounts: string[];
+                 attached_orders: string[]; account_id: string; ticker: string;
+                 direction: string; size: number; fill_price: number;
+                 balance: number }>("/orders", body),
     pending: (accountId?: string, ticker?: string) => {
       const qs = new URLSearchParams();
       if (accountId) qs.set("account_id", accountId);

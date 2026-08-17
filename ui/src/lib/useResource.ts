@@ -27,6 +27,9 @@ export function useResource<T>(
   const [settled, setSettled] = useState(false);
   const [nonce, setNonce] = useState(0);
   const alive = useRef(true);
+  // Consecutive failures widen the gap between attempts. A provider that is
+  // refusing us will keep refusing, and hammering it delays recovery.
+  const failures = useRef(0);
 
   useEffect(() => {
     alive.current = true;
@@ -38,10 +41,11 @@ export function useResource<T>(
     fetcher()
       .then((v) => {
         if (!alive.current) return;
-        setData(v); setError(null);
+        setData(v); setError(null); failures.current = 0;
       })
       .catch((e: unknown) => {
         if (!alive.current) return;
+        failures.current += 1;
         setError(e instanceof Error ? e.message : "Request failed");
       })
       .finally(() => {
@@ -55,8 +59,20 @@ export function useResource<T>(
   useEffect(() => {
     run();
     if (!options.pollMs) return;
-    const t = setInterval(run, options.pollMs);
-    return () => clearInterval(t);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const schedule = () => {
+      // Back off up to 8x while failing; snap back once it works again.
+      const factor = Math.min(8, 2 ** failures.current);
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        run();
+        schedule();
+      }, options.pollMs! * factor);
+    };
+    schedule();
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [run, nonce, options.pollMs]);
 
   return { data, error, loading, settled, reload: () => setNonce((n) => n + 1) };

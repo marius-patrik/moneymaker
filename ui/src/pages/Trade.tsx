@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription }
+  from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AnimatedIcon } from "@/components/ui/animated-icon";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/lib/useResource";
+import { useAccount } from "@/lib/useAccount";
 import { PriceChart, OhlcReadout, type ChartKind, type DrawTool, type Drawing }
   from "@/components/terminal/PriceChart";
 import { AlertsPanel } from "@/components/terminal/AlertsPanel";
@@ -86,13 +89,16 @@ function WatchRow({ symbol, active, onSelect, onRemove }: {
  */
 export function Trade() {
   const { toast } = useToast();
+  const { accountId, scoped, isAll } = useAccount();
   const [watch, setWatch] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(WATCH_KEY) ?? "") ?? DEFAULT_WATCH; }
     catch { return DEFAULT_WATCH; }
   });
   const [ticker, setTicker] = useState(() => localStorage.getItem(TICKER_KEY) ?? DEFAULT_WATCH[0]);
   const [size, setSize] = useState("1");
-  const [orderKind, setOrderKind] = useState<"market" | "limit" | "stop">("market");
+  const [orderKind, setOrderKind] = useState<"market" | "limit" | "stop" | "strategy">("market");
+  const [system, setSystem] = useState("");
+  const [confirmAll, setConfirmAll] = useState<null | "long" | "short">(null);
   const [trigger, setTrigger] = useState("");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
@@ -102,7 +108,7 @@ export function Trade() {
     try { return JSON.parse(localStorage.getItem(DRAW_KEY) ?? "{}"); } catch { return {}; }
   });
   const [sizeMode, setSizeMode] = useState<"units" | "cash">("units");
-  const [accountId, setAccountId] = useState("");
+
   const [placing, setPlacing] = useState<"long" | "short" | null>(null);
   const [posNonce, setPosNonce] = useState(0);
   const [indicators, setIndicators] = useState<ActiveIndicator[]>(() => {
@@ -115,6 +121,7 @@ export function Trade() {
   const [hover, setHover] = useState<Parameters<NonNullable<Parameters<typeof PriceChart>[0]["onHover"]>>[0]>(null);
 
   const accounts = useResource(() => api.accounts.list(), []);
+  const strategies = useResource(() => api.strategies.list(), []);
   const hist = useResource(() => api.orders.history(ticker, tf.interval, tf.days),
                            [ticker, tf.interval, tf.days], { pollMs: 45000 });
 
@@ -134,22 +141,29 @@ export function Trade() {
       .then((rs) => { if (alive) setSeries(rs.filter(Boolean) as IndicatorSeries[]); });
     return () => { alive = false; };
   }, [indicators, ticker, tf.interval, tf.days]);
-  useEffect(() => {
-    const list = accounts.data?.accounts ?? [];
-    if (!accountId && list[0]) setAccountId(list[0].account_id);
-  }, [accounts.data, accountId]);
-
   function select(sym: string) {
     setTicker(sym);
     setWatch((w) => (w.includes(sym) ? w : [sym, ...w].slice(0, 20)));
   }
 
   async function place(direction: "long" | "short") {
+    // Fanning an order across every account is not something to do by
+    // accident, so it is confirmed rather than merely allowed.
+    if (isAll && orderKind !== "strategy" && confirmAll !== direction) {
+      setConfirmAll(direction);
+      return;
+    }
+    setConfirmAll(null);
     setPlacing(direction);
     try {
-      if (orderKind === "market") {
+      if (orderKind === "strategy") {
+        if (!system) throw new Error("Pick a strategy to deploy");
+        const r = await api.live.start({ strategy: system, ticker });
+        toast(`${system} live on ${ticker} · ${r.session_id}`, "success");
+        setPosNonce((n) => n + 1);
+      } else if (orderKind === "market") {
         const r = await api.orders.place({
-          ticker, direction, account_id: accountId || undefined,
+          ticker, direction, account_id: scoped, all_accounts: isAll,
           ...(sizeMode === "units"
             ? { size: Number(size) }
             : { notional: Number(size) }),
@@ -158,7 +172,8 @@ export function Trade() {
         });
         const guards = r.attached_orders.length
           ? ` (+${r.attached_orders.length} exit${r.attached_orders.length > 1 ? "s" : ""})` : "";
-        toast(`${direction === "long" ? "Bought" : "Sold"} ${r.size} ${r.ticker} @ ${fmt(r.fill_price)}${guards}`,
+        const spread = r.accounts.length > 1 ? ` across ${r.accounts.length} accounts` : "";
+        toast(`${direction === "long" ? "Bought" : "Sold"} ${r.size} ${r.ticker} @ ${fmt(r.fill_price)}${guards}${spread}`,
               "success");
         setPosNonce((n) => n + 1);
       } else {
@@ -167,7 +182,7 @@ export function Trade() {
           ticker, direction, size: Number(size), order_type: orderKind,
           trigger_price: Number(trigger),
           limit_price: orderKind === "limit" ? Number(trigger) : undefined,
-          account_id: accountId || undefined,
+          account_id: scoped,
         });
         toast(`${orderKind} ${direction} ${o.size} ${o.ticker} resting @ ${fmt(o.trigger_price)}`,
               "success");
@@ -312,7 +327,7 @@ export function Trade() {
           <Panel title="Ticket">
             <div className="space-y-3">
               <div className="flex rounded-lg bg-muted p-0.5">
-                {(["market", "limit", "stop"] as const).map((k) => (
+                {(["market", "limit", "stop", "strategy"] as const).map((k) => (
                   <button key={k} onClick={() => setOrderKind(k)}
                           className={cn("flex-1 rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors",
                             orderKind === k ? "bg-background shadow-sm" : "text-muted-foreground")}>
@@ -336,7 +351,27 @@ export function Trade() {
                        className="h-8 text-sm" />
               </div>
 
-              {orderKind !== "market" && (
+              {orderKind === "strategy" && (
+                <div className="space-y-1">
+                  <Label htmlFor="ticket-strategy" className="text-xs">Strategy</Label>
+                  <Select value={system} onValueChange={setSystem}>
+                    <SelectTrigger id="ticket-strategy" className="h-8 text-sm">
+                      <SelectValue placeholder="Select strategy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(strategies.data?.strategies ?? []).map((st) => (
+                        <SelectItem key={st.name} value={st.name}>{st.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Hands {ticker} to the strategy, which then manages its own entries
+                    and exits until you stop it.
+                  </p>
+                </div>
+              )}
+
+              {(orderKind === "limit" || orderKind === "stop") && (
                 <Field
                   label={orderKind === "limit" ? "Limit price" : "Stop price"}
                   type="number" value={trigger} onValueChange={setTrigger}
@@ -345,22 +380,6 @@ export function Trade() {
                     ? "Buy below the market, sell above."
                     : "Buy above the market, sell below."} />
               )}
-              <div className="space-y-1">
-                <Label htmlFor="trade-account" className="text-xs">Account</Label>
-                <Select value={accountId} onValueChange={setAccountId}>
-                  <SelectTrigger id="trade-account" className="h-8 text-sm">
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(accounts.data?.accounts ?? []).map((a) => (
-                      <SelectItem key={a.account_id} value={a.account_id}>
-                        {a.name} · {fmtDollar(a.balance)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="space-y-1.5 rounded-lg border bg-muted/30 p-2.5 text-[11px]">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Notional</span>
@@ -394,21 +413,21 @@ export function Trade() {
                         onClick={() => place("long")} disabled={!!placing}>
                   {placing === "long" ? <Loader2 className="h-4 w-4 animate-spin" />
                     : <AnimatedIcon icon={ArrowUpRight} motionType="lift" className="h-4 w-4" />}
-                  Buy
+                  {orderKind === "strategy" ? "Deploy" : "Buy"}
                 </Button>
                 <Button className="w-full bg-loss text-white hover:bg-loss/90"
                         onClick={() => place("short")} disabled={!!placing}>
                   {placing === "short" ? <Loader2 className="h-4 w-4 animate-spin" />
                     : <AnimatedIcon icon={ArrowDownRight} motionType="lift" className="h-4 w-4" />}
-                  Sell
+                  {orderKind === "strategy" ? "Deploy short" : "Sell"}
                 </Button>
               </div>
             </div>
           </Panel>
           <div className="space-y-3 xl:col-span-2">
-            <PositionsPanel accountId={accountId || undefined} refreshKey={posNonce}
+            <PositionsPanel accountId={scoped} refreshKey={posNonce}
                             onChanged={() => { accounts.reload(); setPosNonce((n) => n + 1); }} />
-            <PendingOrdersPanel accountId={accountId || undefined} refreshKey={ordNonce}
+            <PendingOrdersPanel accountId={scoped} refreshKey={ordNonce}
                                 onChanged={() => setOrdNonce((n) => n + 1)} />
             <AlertsPanel ticker={ticker} lastPrice={last} />
           </div>
@@ -416,6 +435,39 @@ export function Trade() {
       </div>
       </div>
       </TabsContent>
+
+      <Dialog open={!!confirmAll} onOpenChange={(v) => !v && setConfirmAll(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Trade every account?</DialogTitle>
+            <DialogDescription>
+              The header is set to <strong>All accounts</strong>, so this places the
+              same order on each of the {accounts.data?.accounts.length ?? 0} — the
+              same size on every one, not split between them.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 rounded-lg border bg-muted/30 p-3 text-[11px]">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Order</span>
+              <span className="font-mono">
+                {confirmAll} {sizeMode === "cash" ? fmtDollar(Number(size || 0)) : size} {ticker}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total exposure</span>
+              <span className="font-mono">
+                {fmtDollar((notional ?? 0) * (accounts.data?.accounts.length ?? 1))}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" onClick={() => setConfirmAll(null)}>Cancel</Button>
+            <Button onClick={() => confirmAll && place(confirmAll)}>
+              Place on all
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Tabs>
   );
 }

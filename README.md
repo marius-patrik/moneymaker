@@ -349,6 +349,7 @@ DELETE /api/alerts/<id>        POST /api/alerts/<id>/rearm
 GET  /api/ticks/stats          what has been recorded
 GET  /api/ticks/<ticker>       recorded ticks as OHLC bars
 GET  /api/ticks/watch          PUT to set what is recorded continuously
+GET  /api/coverage/<ticker>    whether a window has enough ticks to backtest
 GET  /api/orders/missed        triggers reached while nothing was watching
 POST /api/orders/missed/<id>/fill   POST /api/orders/missed/dismiss
 POST /api/alerts/acknowledge   clear the fired-alert banner
@@ -374,6 +375,22 @@ DELETE /api/accounts/<id>      DELETE /api/credentials/<provider>
 `GET /api/providers` groups sources by role — `data` (market prices),
 `news` (economic calendars) and `execution` (order routing) — and omits
 scaffolded stubs unless `?include_stubs=true`.
+
+### Trusting a backtest
+
+A backtest is only as honest as its prices. Provider bars are aggregated
+elsewhere, revised after the fact and delayed, so a fill "at the low of the
+bar" may be a price that never traded while we were watching. Recorded ticks
+are what we actually observed.
+
+`POST /api/backtest` therefore requires tick coverage of at least 95% of the
+window's trading days and refuses otherwise, reporting what is missing. Pass
+`require_ticks: false` to run on provider bars anyway — the result comes back
+labelled indicative. The refusal is deliberate: a result quietly computed
+from provider bars looks identical to a real one, which is worse than no
+result at all.
+
+`GET /api/coverage/<ticker>` answers the same question before you run.
 
 ### Background jobs
 
@@ -439,8 +456,9 @@ The UI is built as a terminal rather than a dashboard of cards:
 - A **status bar** reports connection, data directory and version.
 - Content sits in **panels** with dense title strips and hairline seams, and
   lists are **tables**, not stacks of cards.
-- **⌘K** searches everything at once — instruments, systems, accounts and
-  recorded runs — and selecting an instrument lands on it.
+- **⌘K** or the dock's search button searches everything at once —
+  instruments, systems, accounts and recorded runs. The dock becomes the
+  input and results stack above it, the same at every width.
 - Surfaces are layered: a soft ambient wash on the page, panels above it, and
   frosted chrome the content scrolls beneath. Only P&L figures carry colour.
 - Icons animate on hover with a gesture in the direction the control acts.

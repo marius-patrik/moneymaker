@@ -45,6 +45,7 @@ export default {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",
         },
+        "accent-blue": "hsl(var(--accent-blue))",
         profit: "hsl(var(--profit))",
         loss: "hsl(var(--loss))",
       },

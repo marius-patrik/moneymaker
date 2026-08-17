@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { Panel, Stat, DataTable } from "@/components/terminal/Panel";
 import { SkeletonRows, ErrorState, EmptyState } from "@/components/terminal/States";
 import { Badge } from "@/components/ui/badge";
+import { TradeDetail } from "@/components/terminal/TradeDetail";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useResource } from "@/lib/useResource";
-import { api } from "@/lib/api";
+import { api, type PositionRow } from "@/lib/api";
+import { useAccount } from "@/lib/useAccount";
 import { OverviewPanels } from "@/pages/OverviewPanels";
 import { fmt, fmtDollar, pnlColor } from "@/lib/utils";
 
@@ -18,49 +21,30 @@ const ALL = "__all__";
  * and what they have done.
  */
 export function Portfolio() {
-  const [account, setAccount] = useState(ALL);
+  const [inspect, setInspect] = useState<PositionRow | null>(null);
+  // The header owns account context; a second selector here could disagree
+  // with it, which is exactly the confusion the global switcher removes.
+  const { accountId, scoped, isAll } = useAccount();
   const accounts = useResource(() => api.accounts.list(), []);
-  const positions = useResource(
-    () => api.positions.list(account === ALL ? undefined : account),
-    [account],
-    { pollMs: 15000 }
-  );
+  const positions = useResource(() => api.positions.list(scoped), [scoped],
+                                { pollMs: 15000 });
 
   const list = accounts.data?.accounts ?? [];
   const d = positions.data;
-  const scoped = list.find((a) => a.account_id === account);
-  const equity = account === ALL
+  const current = list.find((a) => a.account_id === accountId);
+  const equity = isAll
     ? list.reduce((s, a) => s + (a.balance ?? 0), 0)
-    : scoped?.balance ?? 0;
+    : current?.balance ?? 0;
 
   return (
     <div className="space-y-3 p-3 sm:p-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="w-full max-w-56 space-y-1">
-          <Label htmlFor="pf-account" className="text-xs">Account</Label>
-          <Select value={account} onValueChange={setAccount}>
-            <SelectTrigger id="pf-account" className="h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All accounts</SelectItem>
-              {list.map((a) => (
-                <SelectItem key={a.account_id} value={a.account_id}>
-                  {a.name} · {fmtDollar(a.balance)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
       {/* Account-wide performance, which used to be its own destination. */}
-      {account === ALL && <OverviewPanels />}
+      {isAll && <OverviewPanels />}
 
       <Panel title="Summary">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Stat label="Equity" value={fmtDollar(equity)}
-                sub={account === ALL ? `${list.length} accounts` : scoped?.provider} />
+                sub={isAll ? `${list.length} accounts` : current?.provider} />
           <Stat label="Realised" value={d ? fmtDollar(d.realised_pnl) : "—"}
                 tone={!d || d.realised_pnl === 0 ? "neutral" : d.realised_pnl > 0 ? "profit" : "loss"}
                 sub={d ? `${d.closed_count} closed` : undefined} />
@@ -85,7 +69,7 @@ export function Portfolio() {
                                 <th className="!text-right">Unrealised</th>
                                 <th>Run</th></>}>
                 {d!.open.map((t, i) => (
-                  <tr key={i}>
+                  <tr key={i} onClick={() => setInspect(t)} className="cursor-pointer">
                     <td className="font-mono">{t.ticker || "—"}</td>
                     <td>
                       <Badge variant={t.direction === "long" ? "profit" : "loss"}
@@ -124,8 +108,8 @@ export function Portfolio() {
                                 <th className="!text-right">Size</th><th className="!text-right">Entry</th>
                                 <th className="!text-right">Exit</th><th>Reason</th>
                                 <th className="!text-right">P&L</th></>}>
-                {d!.closed.slice(0, 200).map((t, i) => (
-                  <tr key={i}>
+                {d!.closed.slice(0, 8).map((t, i) => (
+                  <tr key={i} onClick={() => setInspect(t)} className="cursor-pointer">
                     <td className="font-mono">{t.ticker || "—"}</td>
                     <td>
                       <Badge variant={t.direction === "long" ? "profit" : "loss"}
@@ -155,6 +139,10 @@ export function Portfolio() {
               </DataTable>
             )}
       </Panel>
+
+      <TradeDetail trade={inspect} open={!!inspect}
+                   onOpenChange={(v) => !v && setInspect(null)}
+                   onClosed={positions.reload} />
     </div>
   );
 }
